@@ -1,0 +1,37 @@
+{
+    "video_size":[960, 540],
+    "images_data":
+    [
+        {
+            "filename":"prat_1.jpeg",
+            "frame":
+            [
+                [7, 488],
+                [891,988]
+            ], 
+            "prev_points":null,
+            "next_points":
+            [
+                [519, 716],
+                [543, 686],
+                [577, 713]
+            ]
+        },
+        {
+            "filename":"prat_2.jpeg",
+            "frame":
+            [
+                [142, 421],
+                [820, 803]
+            ],
+            "prev_points":
+            [
+                [194, 727],
+                [430, 437],
+                [754, 670]
+            ],
+            "next_points":null
+        }
+    ]
+}       
+            
