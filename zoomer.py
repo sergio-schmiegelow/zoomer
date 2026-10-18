@@ -7,27 +7,48 @@ CROSS_THICKNESS = 2
 CROSS_COLORS = [[255, 0, 0], [0, 255, 0], [0, 0, 255]]  # Red, Green, Blue
 FRAME_COLOR = [255, 0, 0]  # Blue
 FRAME_THICKNESS = 2
+BLEND_RANGE_DETECTION_RESOLUTION = 0.01
+#-------------------------------------------------------------------------
+def polygonIsInsidePolygon(innerPolygon:np.ndarray, outerPolygon:np.ndarray)->bool:
+    # Check if all points of the inner polygon are inside the outer polygon.
+    for point in innerPolygon:
+        if cv.pointPolygonTest(outerPolygon, (point[0], point[1]), False) < 0:
+            return False
+    return True
 #-------------------------------------------------------------------------
 class affineTransformerClass:
     #---------------------------------------------------------------------
     def __init__(self, startPoints:np.ndarray, endPoints:np.ndarray)->None:
-        print(f'DEBUG - startPoints: \n{startPoints}')
-        print(f'DEBUG - endPoints:   \n{endPoints}')
+        #print(f'DEBUG - startPoints: \n{startPoints}')
+        #print(f'DEBUG - endPoints:   \n{endPoints}')
         self.startPoints = startPoints
         self.endPoints = endPoints
-        self.transformMatrix = self.calculateTransformMatrix()
+        self.calculateTransformMatrix()
     #---------------------------------------------------------------------
     def setStartPoints(self, startPoints:np.ndarray)->None:
         self.startPoints = startPoints
-        self.transformMatrix = self.calculateTransformMatrix()
+        self.calculateTransformMatrix()
     #---------------------------------------------------------------------
     def setEndPoints(self, endPoints:np.ndarray)->None:
         self.endPoints = endPoints
-        self.transformMatrix = self.calculateTransformMatrix()
+        self.calculateTransformMatrix()
     #---------------------------------------------------------------------
     def calculateTransformMatrix(self)->None:
         # Calculate the affine transformation matrix based on the start and end points.
         self.transformMatrix = cv.getAffineTransform(self.startPoints.astype(np.float32), self.endPoints.astype(np.float32))
+    #---------------------------------------------------------------------
+    def transformedImageFillsOutputSize(self, image:np.ndarray, outputSize:np.ndarray)->bool:
+        # Check it the transformed image will not leave any blank areas in the output frame of the specified size.
+        # Get the corners of the image
+        h, w = image.shape[:2]
+        originalImgCornersPolygon = np.array([[0, 0], [w, 0], [w, h], [0, h]], dtype=np.float32)
+        # Transform the corners
+        transformedImgCornersPolygon = cv.transform(np.array([originalImgCornersPolygon]), self.transformMatrix)[0]
+        videoCornersPolygon = np.array([[0, 0], [outputSize[0], 0], [outputSize[0], outputSize[1]], [0, outputSize[1]]], dtype=np.float32)
+        print(f'DEBUG - transformedImgCornersPolygon: \n{transformedImgCornersPolygon}')
+        print(f'DEBUG - videoCornersPolygon: \n{videoCornersPolygon}')
+        # Check if videoCornersPolygon is inside transformedImgCornersPolygon
+        return polygonIsInsidePolygon(videoCornersPolygon, transformedImgCornersPolygon)
     #---------------------------------------------------------------------
     def transformImage(self, image:np.ndarray, outputSize:np.ndarray)->np.ndarray:
         # Apply the affine transformation to an image.
@@ -43,10 +64,10 @@ class affineTransformerClass:
 #-------------------------------------------------------------------------
 def convert3PointsAndFrameToVideoCoordinates(points:np.ndarray, frame:np.ndarray, videoDims:np.ndarray)->np.ndarray:
     outPoints = np.zeros(points.shape, dtype=np.float32)
-    print(f'DEBUG - points: \n{points}')
-    print(f'DEBUG - frame: \n{frame}')
-    print(f'DEBUG - videoDims: \n{videoDims}')
-    print(f'DEBUG - outPoints: \n{outPoints}')
+    #print(f'DEBUG - points: \n{points}')
+    #print(f'DEBUG - frame: \n{frame}')
+    #print(f'DEBUG - videoDims: \n{videoDims}')
+    #print(f'DEBUG - outPoints: \n{outPoints}')
     outPoints[:, 0] = (points[:, 0] - frame[0][0]) * (videoDims[0] / (frame[1][0] - frame[0][0]))
     outPoints[:, 1] = (points[:, 1] - frame[0][1]) * (videoDims[1] / (frame[1][1] - frame[0][1]))
     return outPoints
@@ -108,29 +129,6 @@ def interpolatePointsGP(points0:np.ndarray, points1:np.ndarray, alpha:float)->np
     print(f'DEBUG - sizeRatio: {sizeRatio}, alpha: {alpha}, linearSizeRatio: {linearSizeRatio}, pgAlpha: {pgAlpha}')
     return (1 - pgAlpha) * points0 + pgAlpha * points1
 #-------------------------------------------------------------------------
-#Function to calculate the alpha range where both transformed images fill all the video frame
-def calculateBlendAlphaRange(img0:np.ndarray, points0:np.ndarray, frame0:np.ndarray, img1:np.ndarray, points1:np.ndarray, frame1:np.ndarray, videoDims:np.ndarray)->tuple:
-    #Convert the points0 to frame0 coordinates
-    videoTransformedPoints0 = convertPointsToVideoDimensions(points0, frame0, videoDims)
-    #Convert the points1 to frame1 coordinates
-    videoTransformedPoints1 = convertPointsToVideoDimensions(points1, frame1, videoDims)
-    #Calculate the bounding boxes of the transformed points
-    minPoint0 = np.min(videoTransformedPoints0, axis=0)
-    maxPoint0 = np.max(videoTransformedPoints0, axis=0)
-    minPoint1 = np.min(videoTransformedPoints1, axis=0)
-    maxPoint1 = np.max(videoTransformedPoints1, axis=0)
-    
-    #Calculate the alpha range where both transformed images fill all the video frame
-    alphaMinX = (videoDims[0] - maxPoint1[0]) / (maxPoint0[0] - maxPoint1[0]) if maxPoint0[0] != maxPoint1[0] else 0
-    alphaMaxX = (videoDims[0] - minPoint1[0]) / (minPoint0[0] - minPoint1[0]) if minPoint0[0] != minPoint1[0] else 1
-    alphaMinY = (videoDims[1] - maxPoint1[1]) / (maxPoint0[1] - maxPoint1[1]) if maxPoint0[1] != maxPoint1[1] else 0
-    alphaMaxY = (videoDims[1] - minPoint1[1]) / (minPoint0[1] - minPoint1[1]) if minPoint0[1] != minPoint1[1] else 1
-    
-    alphaMin = max(0, alphaMinX, alphaMinY)
-    alphaMax = min(1, alphaMaxX, alphaMaxY)
-    
-    return (alphaMin, alphaMax)
-#-------------------------------------------------------------------------
 def createIntermediateFrame(videoSize:np.ndarray, 
                             img0:np.ndarray, points0:np.ndarray, frame0:np.ndarray,
                                              points1:np.ndarray, frame1:np.ndarray,
@@ -144,9 +142,22 @@ def createIntermediateFrame(videoSize:np.ndarray,
     #Create an affine transformer for the first image
     imgTransformer = affineTransformerClass(points0, interpolatedPoints)
     #Transform the first image to the intermediate frame
+    print(f"DEBUG image will fill output size (sizeAlpha = {sizeAlpha}): {imgTransformer.transformedImageFillsOutputSize(img0, videoSize)}")
     intermediateFrame = imgTransformer.transformImage(img0, videoSize)
     return intermediateFrame
 #-------------------------------------------------------------------------
+def createBlendedFrame(videoSize:np.ndarray, 
+                       img0:np.ndarray, points0:np.ndarray, frame0:np.ndarray,
+                       img1:np.ndarray, points1:np.ndarray, frame1:np.ndarray,
+                       sizeAlpha:float)->np.ndarray:
+    #Create the intermediate frames for both images
+    intermediateFrame0 = createIntermediateFrame(videoSize, img0, points0, frame0, points1, frame1, sizeAlpha)
+    intermediateFrame1 = createIntermediateFrame(videoSize, img1, points1, frame1, points0, frame0, 1-sizeAlpha)
+    #Blend the two intermediate frames
+    blendedFrame = cv.addWeighted(intermediateFrame0, 1-sizeAlpha, intermediateFrame1, sizeAlpha, 0)
+    return blendedFrame
+#-------------------------------------------------------------------------
+
 if __name__ == "__main__": 
     cfgFile = 'prat.json'
     cfgDict = json.load(open(cfgFile, 'r'))
@@ -161,18 +172,11 @@ if __name__ == "__main__":
     frame1 = np.array(cfgDict['images_data'][1]['frame'], dtype=np.float32)
     prevPoints1 = np.array(cfgDict['images_data'][1]['prev_points'], dtype=np.float32)
     
-    
-    blendAlphaMin, blendAlphaMax = calculateBlendAlphaRange(img0, nextPoints0, frame0, img1, prevPoints1, frame1, videoDims)
-
     for sizeAlpha in np.linspace(0, 1, num=100):
-        interpolatePointsGP(nextPoints0, prevPoints1, sizeAlpha)
-        outFrame0 = createIntermediateFrame(videoDims, img0, nextPoints0, frame0, prevPoints1, frame1, sizeAlpha)
-        outFrame1 = createIntermediateFrame(videoDims, img1, prevPoints1, frame1, nextPoints0, frame0, 1-sizeAlpha)
-        blendedFrame = cv.addWeighted(outFrame0, 1-sizeAlpha, outFrame1, sizeAlpha, 0)
-        cv.imshow(f'Intermediate Frame0', outFrame0)
-        cv.imshow(f'Intermediate Frame1', outFrame1)
+        blendedFrame = createBlendedFrame(videoDims, img0, nextPoints0, frame0, img1, prevPoints1, frame1, sizeAlpha)
+        blendedFrame = createBlendedFrame(videoDims, img0, nextPoints0, frame0, img1, prevPoints1, frame1, sizeAlpha)
         cv.imshow(f'Blended Frame', blendedFrame)
-        cv.waitKey(100)
+        cv.waitKey(1)
 
     cv.destroyAllWindows()
     quit()
