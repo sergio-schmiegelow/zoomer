@@ -2,6 +2,7 @@ import cv2 as cv
 import numpy as np
 import json
 
+NUM_FRAMES = 100
 CROSS_SIZE = 10
 CROSS_THICKNESS = 2
 CROSS_COLORS = [[255, 0, 0], [0, 255, 0], [0, 0, 255]]  # Red, Green, Blue
@@ -190,7 +191,7 @@ if __name__ == "__main__":
 
     minBlendAlpha, maxBlendAlpha = getBlendAlphaRange(videoDims, img0, nextPoints0, frame0, img1, prevPoints1, frame1)
     print(f"DEBUG - blendAlphaRange = {minBlendAlpha} to {maxBlendAlpha}")
-    for sizeAlpha in np.linspace(0, 1, num=100):
+    for sizeAlpha in np.linspace(0, 1, num=NUM_FRAMES):
         blendAlpha = (sizeAlpha - minBlendAlpha) / (maxBlendAlpha - minBlendAlpha) 
         blendAlpha = np.clip(blendAlpha, 0.0, 1.0)
         print(f"DEBUG - sizeAlpha = {sizeAlpha}, blendAlpha = {blendAlpha}")
