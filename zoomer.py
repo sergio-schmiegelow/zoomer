@@ -45,8 +45,6 @@ class affineTransformerClass:
         # Transform the corners
         transformedImgCornersPolygon = cv.transform(np.array([originalImgCornersPolygon]), self.transformMatrix)[0]
         videoCornersPolygon = np.array([[0, 0], [outputSize[0], 0], [outputSize[0], outputSize[1]], [0, outputSize[1]]], dtype=np.float32)
-        print(f'DEBUG - transformedImgCornersPolygon: \n{transformedImgCornersPolygon}')
-        print(f'DEBUG - videoCornersPolygon: \n{videoCornersPolygon}')
         # Check if videoCornersPolygon is inside transformedImgCornersPolygon
         return polygonIsInsidePolygon(videoCornersPolygon, transformedImgCornersPolygon)
     #---------------------------------------------------------------------
@@ -126,13 +124,13 @@ def interpolatePointsGP(points0:np.ndarray, points1:np.ndarray, alpha:float)->np
     interpolatedLogSize = alpha * logSizeRatio
     linearSizeRatio = np.exp(interpolatedLogSize)
     pgAlpha = (linearSizeRatio - 1) / (sizeRatio - 1) if sizeRatio != 1 else alpha
-    print(f'DEBUG - sizeRatio: {sizeRatio}, alpha: {alpha}, linearSizeRatio: {linearSizeRatio}, pgAlpha: {pgAlpha}')
+    #print(f'DEBUG - sizeRatio: {sizeRatio}, alpha: {alpha}, linearSizeRatio: {linearSizeRatio}, pgAlpha: {pgAlpha}')
     return (1 - pgAlpha) * points0 + pgAlpha * points1
 #-------------------------------------------------------------------------
 def createIntermediateFrame(videoSize:np.ndarray, 
                             img0:np.ndarray, points0:np.ndarray, frame0:np.ndarray,
                                              points1:np.ndarray, frame1:np.ndarray,
-                            sizeAlpha:float)->np.ndarray:
+                            sizeAlpha:float, checkFill:bool=False)->np.ndarray:
     #Convert the points0 to frame0 coordinates
     videoTransformedPoints0 = convertPointsToVideoDimensions(points0, frame0, videoSize)
     #Convert the points1 to frame1 coordinates
@@ -141,20 +139,38 @@ def createIntermediateFrame(videoSize:np.ndarray,
     interpolatedPoints = interpolatePointsGP(videoTransformedPoints0, videoTransformedPoints1, sizeAlpha)
     #Create an affine transformer for the first image
     imgTransformer = affineTransformerClass(points0, interpolatedPoints)
+    if checkFill:
+        return imgTransformer.transformedImageFillsOutputSize(img0, videoSize)
     #Transform the first image to the intermediate frame
-    print(f"DEBUG image will fill output size (sizeAlpha = {sizeAlpha}): {imgTransformer.transformedImageFillsOutputSize(img0, videoSize)}")
     intermediateFrame = imgTransformer.transformImage(img0, videoSize)
     return intermediateFrame
+#-------------------------------------------------------------------------
+def getBlendAlphaRange(videoSize:np.ndarray, 
+                       img0:np.ndarray, points0:np.ndarray, frame0:np.ndarray,
+                       img1:np.ndarray, points1:np.ndarray, frame1:np.ndarray)->tuple:
+    #Scan the sizeAlpha to find the range where both images can fill the output frame
+    minSizeAlphaForBlending = 1.0
+    maxSizeAlphaForBlending = 0.0
+    for testSizeAlpha in np.linspace(0, 1, num=int(1/BLEND_RANGE_DETECTION_RESOLUTION)+1):
+        intermediateFrame0Fills = createIntermediateFrame(videoSize, img0, points0, frame0, points1, frame1, testSizeAlpha, checkFill=True)
+        intermediateFrame1Fills = createIntermediateFrame(videoSize, img1, points1, frame1, points0, frame0, 1-testSizeAlpha, checkFill=True)
+        print(f"DEBUG - testSizeAlpha = {testSizeAlpha}, intermediateFrame0Fills = {intermediateFrame0Fills}, intermediateFrame1Fills = {intermediateFrame1Fills}")
+        if intermediateFrame0Fills and intermediateFrame1Fills:
+            if testSizeAlpha < minSizeAlphaForBlending:
+                minSizeAlphaForBlending = testSizeAlpha
+            if testSizeAlpha > maxSizeAlphaForBlending:
+                maxSizeAlphaForBlending = testSizeAlpha
+    return minSizeAlphaForBlending, maxSizeAlphaForBlending
 #-------------------------------------------------------------------------
 def createBlendedFrame(videoSize:np.ndarray, 
                        img0:np.ndarray, points0:np.ndarray, frame0:np.ndarray,
                        img1:np.ndarray, points1:np.ndarray, frame1:np.ndarray,
-                       sizeAlpha:float)->np.ndarray:
+                       sizeAlpha:float, blendAlpha:float)->np.ndarray:
     #Create the intermediate frames for both images
     intermediateFrame0 = createIntermediateFrame(videoSize, img0, points0, frame0, points1, frame1, sizeAlpha)
     intermediateFrame1 = createIntermediateFrame(videoSize, img1, points1, frame1, points0, frame0, 1-sizeAlpha)
     #Blend the two intermediate frames
-    blendedFrame = cv.addWeighted(intermediateFrame0, 1-sizeAlpha, intermediateFrame1, sizeAlpha, 0)
+    blendedFrame = cv.addWeighted(intermediateFrame0, 1-blendAlpha, intermediateFrame1, blendAlpha, 0)
     return blendedFrame
 #-------------------------------------------------------------------------
 
@@ -171,13 +187,18 @@ if __name__ == "__main__":
     img1 = cv.imread(cfgDict['images_data'][1]['filename'])
     frame1 = np.array(cfgDict['images_data'][1]['frame'], dtype=np.float32)
     prevPoints1 = np.array(cfgDict['images_data'][1]['prev_points'], dtype=np.float32)
-    
+
+    minBlendAlpha, maxBlendAlpha = getBlendAlphaRange(videoDims, img0, nextPoints0, frame0, img1, prevPoints1, frame1)
+    print(f"DEBUG - blendAlphaRange = {minBlendAlpha} to {maxBlendAlpha}")
     for sizeAlpha in np.linspace(0, 1, num=100):
-        blendedFrame = createBlendedFrame(videoDims, img0, nextPoints0, frame0, img1, prevPoints1, frame1, sizeAlpha)
-        blendedFrame = createBlendedFrame(videoDims, img0, nextPoints0, frame0, img1, prevPoints1, frame1, sizeAlpha)
+        blendAlpha = (sizeAlpha - minBlendAlpha) / (maxBlendAlpha - minBlendAlpha) 
+        blendAlpha = np.clip(blendAlpha, 0.0, 1.0)
+        print(f"DEBUG - sizeAlpha = {sizeAlpha}, blendAlpha = {blendAlpha}")
+        blendedFrame = createBlendedFrame(videoDims, img0, nextPoints0, frame0, img1, prevPoints1, frame1, sizeAlpha, blendAlpha)
         cv.imshow(f'Blended Frame', blendedFrame)
         cv.waitKey(1)
 
+    cv.waitKey(0)
     cv.destroyAllWindows()
     quit()
     
