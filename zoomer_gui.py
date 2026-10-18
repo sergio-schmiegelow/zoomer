@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QImage, QPainter, QPen
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget
+from PyQt6.QtWidgets import QApplication, QMainWindow, QPushButton, QWidget
 
 
 CROSS_SIZE = 20
@@ -39,6 +39,9 @@ class imageMarkersEditor(QWidget):
 		self._drag_mode = None
 		self._drag_point = None
 		self._last_mouse_position = QPointF()
+		self.zoom_all_button = QPushButton("Zoom all", self)
+		self.zoom_all_button.setFixedSize(96, 34)
+		self.zoom_all_button.clicked.connect(self.zoom_all)
 		self.setMinimumSize(480, 360)
 		self.setMouseTracking(True)
 		self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -55,21 +58,35 @@ class imageMarkersEditor(QWidget):
 
 	def resizeEvent(self, _event):
 		super().resizeEvent(_event)
+		self.zoom_all_button.move(self.width() - self.zoom_all_button.width() - 12, 10)
 		if not self._fitted:
-			self._fit_image()
+			self.zoom_all()
 
 	def showEvent(self, event):
 		super().showEvent(event)
 		if not self._fitted:
-			self._fit_image()
+			self.zoom_all()
 
-	def _fit_image(self):
+	def zoom_all(self):
 		if self.width() <= 0 or self.height() <= 0:
 			return
-		self.scale = min(self.width() / self.image.width(), self.height() / self.image.height())
+		frame_right = self.frame_x + self.frame_width
+		frame_bottom = self.frame_y + self.frame_height
+		all_x = [0.0, float(self.image.width()), self.frame_x, frame_right]
+		all_y = [0.0, float(self.image.height()), self.frame_y, frame_bottom]
+		all_x.extend(point.x() for point in self.points)
+		all_y.extend(point.y() for point in self.points)
+		bounds = QRectF(
+			min(all_x), min(all_y), max(all_x) - min(all_x), max(all_y) - min(all_y)
+		)
+		padding = CROSS_SIZE + 8
+		view = QRectF(0, 48, self.width(), self.height() - 48)
+		available_width = max(1, view.width() - 2 * padding)
+		available_height = max(1, view.height() - 2 * padding)
+		self.scale = min(available_width / bounds.width(), available_height / bounds.height())
 		self.pan = QPointF(
-			(self.width() - self.image.width() * self.scale) / 2,
-			(self.height() - self.image.height() * self.scale) / 2,
+			view.center().x() - bounds.center().x() * self.scale,
+			view.center().y() - bounds.center().y() * self.scale,
 		)
 		self._fitted = True
 		self.update()
@@ -261,9 +278,17 @@ class imageMarkersEditor(QWidget):
 		}
 
 
+class MainApp(QMainWindow):
+	def receive_points_changed(self, points):
+		print(f'DEBUG - points changed: {points}')
+
+	def receive_frame_changed(self, frame):
+		print(f'DEBUG - frame changed: {frame}')
+
+
 def main() -> int:
 	app = QApplication(sys.argv)
-	window = QMainWindow()
+	window = MainApp()
 	config_path = Path(__file__).resolve().parent / "prat.json"
 	with config_path.open(encoding="utf-8") as config_file:
 		image_data = json.load(config_file)["images_data"][0]
@@ -277,6 +302,8 @@ def main() -> int:
 		image_data["filename"], frameUL, frame_width,
 		frame_aspect_ratio, image_data["next_points"],
 	)
+	imageEditor.pointsChanged.connect(window.receive_points_changed)
+	imageEditor.frameChanged.connect(window.receive_frame_changed)
 	window.setCentralWidget(imageEditor)
 	window.resize(1000, 700)
 	window.show()
