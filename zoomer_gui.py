@@ -7,7 +7,7 @@ from PyQt6.QtGui import QColor, QImage, QPainter, QPen
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget
 
 
-CROSS_SIZE = 12
+CROSS_SIZE = 20
 
 
 class imageMarkersEditor(QWidget):
@@ -90,23 +90,34 @@ class imageMarkersEditor(QWidget):
 		frame_bottom_right = self.image_to_widget(
 			QPointF(self.frame_x + self.frame_width, self.frame_y + self.frame_height)
 		)
-		painter.setPen(QPen(QColor("#ff8c00"), 2))
 		painter.setBrush(Qt.BrushStyle.NoBrush)
-		painter.drawRect(QRectF(
+		frame_rect = QRectF(
 			frame_top_left.x(), frame_top_left.y(),
 			frame_bottom_right.x() - frame_top_left.x(),
 			frame_bottom_right.y() - frame_top_left.y(),
-		))
+		)
+		for frame_color, frame_width in (
+			(QColor("black"), 7),
+			(QColor("white"), 4),
+			(QColor("#ff8c00"), 2),
+		):
+			painter.setPen(QPen(frame_color, frame_width))
+			painter.drawRect(frame_rect)
 
 		point_colors = (QColor("red"), QColor("green"), QColor("blue"))
 		for point, color in zip(self.points, point_colors):
 			position = self.image_to_widget(point)
-			painter.setPen(QPen(color, 2))
-			half_size = CROSS_SIZE / 2
-			painter.drawLine(QPointF(position.x() - half_size, position.y()),
-				QPointF(position.x() + half_size, position.y()))
-			painter.drawLine(QPointF(position.x(), position.y() - half_size),
-				QPointF(position.x(), position.y() + half_size))
+			for line_color, line_width, line_size in (
+				(QColor("black"), 7, CROSS_SIZE),
+				(QColor("white"), 4, CROSS_SIZE - 4),
+				(color, 2, CROSS_SIZE - 8),
+			):
+				painter.setPen(QPen(line_color, line_width))
+				half_size = line_size / 2
+				painter.drawLine(QPointF(position.x() - half_size, position.y()),
+					QPointF(position.x() + half_size, position.y()))
+				painter.drawLine(QPointF(position.x(), position.y() - half_size),
+					QPointF(position.x(), position.y() + half_size))
 		_event.accept()
 
 	def _frame_handle_at(self, position):
