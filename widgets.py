@@ -1,21 +1,193 @@
 from pathlib import Path
 
 from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QImage, QPainter, QPen
+from PyQt6.QtGui import QColor, QImage, QImageReader, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
+	QAbstractItemView,
 	QComboBox,
 	QDialog,
 	QDialogButtonBox,
 	QDoubleSpinBox,
+	QFileDialog,
 	QFormLayout,
 	QHBoxLayout,
+	QLabel,
+	QListWidget,
+	QListWidgetItem,
 	QPushButton,
+	QSplitter,
 	QSpinBox,
+	QVBoxLayout,
 	QWidget,
 )
 
 
 CROSS_SIZE = 20
+
+
+def load_oriented_image(filename):
+	reader = QImageReader(str(filename))
+	reader.setAutoTransform(True)
+	return reader.read()
+
+
+class imageFilesOrganizer(QWidget):
+	selectedImageChanged = pyqtSignal(str)
+
+	def __init__(self, parent=None):
+		super().__init__(parent)
+		self.setObjectName("imageFilesOrganizer")
+		layout = QVBoxLayout(self)
+		self.add_files_button = QPushButton("Add files")
+		self.image_list = _ImageFileListWidget(self)
+		self.image_list.currentRowChanged.connect(self._selection_changed)
+		layout.addWidget(self.add_files_button)
+		layout.addWidget(self.image_list)
+		self.add_files_button.clicked.connect(self.open_add_files_dialog)
+
+	def open_add_files_dialog(self):
+		filenames = QFileDialog.getOpenFileNames(
+			self, "Add images", "",
+			"Images (*.png *.jpg *.jpeg *.bmp *.gif *.tif *.tiff *.webp);;All files (*)",
+		)[0]
+		self.add_image_files(filenames)
+
+	def add_image_files(self, filenames):
+		added_items = []
+		known_paths = {
+			self.image_list.item(index).data(Qt.ItemDataRole.UserRole)
+			for index in range(self.image_list.count())
+		}
+		for filename in filenames:
+			path = Path(filename).expanduser().resolve()
+			if not path.is_file() or not QImageReader(str(path)).canRead():
+				continue
+			path_text = str(path)
+			if path_text in known_paths:
+				continue
+			item = QListWidgetItem(path.name)
+			item.setData(Qt.ItemDataRole.UserRole, path_text)
+			item.setToolTip(path_text)
+			self.image_list.addItem(item)
+			known_paths.add(path_text)
+			added_items.append(item)
+		if added_items:
+			self.image_list.setCurrentItem(added_items[0])
+
+	def set_image_files(self, filenames):
+		self.image_list.clear()
+		self.add_image_files(filenames)
+
+	def _selection_changed(self, row):
+		item = self.image_list.item(row) if row >= 0 else None
+		self.selectedImageChanged.emit(item.data(Qt.ItemDataRole.UserRole) if item else "")
+
+
+class _ImageFileListWidget(QListWidget):
+	def __init__(self, organizer):
+		super().__init__(organizer)
+		self.organizer = organizer
+		self.setAcceptDrops(True)
+		self.setDragEnabled(True)
+		self.setDropIndicatorShown(True)
+		self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+		self.setDefaultDropAction(Qt.DropAction.MoveAction)
+
+	def keyPressEvent(self, event):
+		if event.key() == Qt.Key.Key_Delete:
+			row = self.currentRow()
+			if row >= 0:
+				self.takeItem(row)
+				if self.count():
+					self.setCurrentRow(min(row, self.count() - 1))
+				else:
+					self.organizer._selection_changed(-1)
+			return
+		super().keyPressEvent(event)
+
+	def dragEnterEvent(self, event):
+		if event.source() is self:
+			super().dragEnterEvent(event)
+		elif self._has_image_urls(event.mimeData().urls()):
+			event.setDropAction(Qt.DropAction.CopyAction)
+			event.accept()
+		else:
+			event.ignore()
+
+	def dragMoveEvent(self, event):
+		if event.source() is self:
+			super().dragMoveEvent(event)
+		elif self._has_image_urls(event.mimeData().urls()):
+			event.setDropAction(Qt.DropAction.CopyAction)
+			event.accept()
+		else:
+			event.ignore()
+
+	def dropEvent(self, event):
+		if event.source() is self:
+			super().dropEvent(event)
+			return
+		if not self._has_image_urls(event.mimeData().urls()):
+			event.ignore()
+			return
+		self.organizer.add_image_files(
+			url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()
+		)
+		event.setDropAction(Qt.DropAction.CopyAction)
+		event.accept()
+
+	@staticmethod
+	def _has_image_urls(urls):
+		return any(
+			url.isLocalFile()
+			and Path(url.toLocalFile()).is_file()
+			and QImageReader(url.toLocalFile()).canRead()
+			for url in urls
+		)
+
+
+class previewArea(QLabel):
+	def __init__(self, parent=None):
+		super().__init__("Select an image to preview", parent)
+		self.setObjectName("previewArea")
+		self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+		self.setMinimumSize(160, 120)
+		self.setStyleSheet("background-color: #202020; color: white;")
+		self._pixmap = QPixmap()
+
+	def set_image(self, filename):
+		image = load_oriented_image(filename) if filename else QImage()
+		if image.isNull():
+			self._pixmap = QPixmap()
+			self.setText("Select an image to preview" if not filename else "Unable to load image")
+		else:
+			self._pixmap = QPixmap.fromImage(image)
+			self.setText("")
+		self._update_preview()
+
+	def resizeEvent(self, event):
+		super().resizeEvent(event)
+		self._update_preview()
+
+	def _update_preview(self):
+		if not self._pixmap.isNull():
+			self.setPixmap(self._pixmap.scaled(
+				self.contentsRect().size(),
+				Qt.AspectRatioMode.KeepAspectRatio,
+				Qt.TransformationMode.SmoothTransformation,
+			))
+
+
+class imageFilesAndPreviewArea(QSplitter):
+	def __init__(self, parent=None):
+		super().__init__(Qt.Orientation.Horizontal, parent)
+		self.setObjectName("imageFilesAndPreviewArea")
+		self.image_files_organizer = imageFilesOrganizer(self)
+		self.preview_area = previewArea(self)
+		self.addWidget(self.image_files_organizer)
+		self.addWidget(self.preview_area)
+		self.setStretchFactor(0, 1)
+		self.setStretchFactor(1, 3)
 
 
 class VideoSettingsDialog(QDialog):
@@ -142,7 +314,7 @@ class imageMarkersEditor(QWidget):
 		image_path = Path(image_filename)
 		if not image_path.is_absolute():
 			image_path = Path(__file__).resolve().parent / image_path
-		self.image = QImage(str(image_path))
+		self.image = load_oriented_image(image_path)
 		if self.image.isNull():
 			raise ValueError(f"Unable to load image: {image_path}")
 

@@ -2,9 +2,10 @@ import sys
 import json
 from pathlib import Path
 
-from PyQt6.QtWidgets import QApplication, QFileDialog, QMainWindow
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QFileDialog, QMainWindow, QSplitter
 
-from widgets import VideoSettingsDialog, imageMarkersEditor
+from widgets import VideoSettingsDialog, imageFilesAndPreviewArea, imageMarkersEditor
 
 
 class MainApp(QMainWindow):
@@ -13,6 +14,7 @@ class MainApp(QMainWindow):
 		self.video_settings = dict(video_settings)
 		self.project_filename = project_filename
 		self.export_filename = ""
+		self.image_entries = []
 		self.setWindowTitle("Zoomer")
 		self._create_menus()
 
@@ -69,26 +71,62 @@ class MainApp(QMainWindow):
 	def receive_frame_changed(self, frame):
 		print(f'DEBUG - frame changed: {frame}')
 
+	def set_image_workspace(self, image_entries, base_directory):
+		self.image_entries = image_entries
+		self.base_directory = Path(base_directory)
+		self.image_files_and_preview_area = imageFilesAndPreviewArea(self)
+		self.image_files_and_preview_area.image_files_organizer.selectedImageChanged.connect(
+			self._select_image
+		)
+		self.workspace_splitter = QSplitter(Qt.Orientation.Vertical, self)
+		self.workspace_splitter.addWidget(self.image_files_and_preview_area)
+		self.image_fusion_editor = None
+		self.setCentralWidget(self.workspace_splitter)
+		paths = [self.base_directory / entry['filename'] for entry in image_entries]
+		self.image_files_and_preview_area.image_files_organizer.set_image_files(paths)
+
+	def _select_image(self, filename):
+		self.image_files_and_preview_area.preview_area.set_image(filename)
+		if not filename:
+			return
+		selected_path = Path(filename).resolve()
+		image_data = next((
+			entry for entry in self.image_entries
+			if (self.base_directory / entry['filename']).resolve() == selected_path
+		), None)
+		if image_data is None:
+			return
+		frame_upper_left, frame_lower_right = image_data['frame']
+		frame_width = frame_lower_right[0] - frame_upper_left[0]
+		frame_height = frame_lower_right[1] - frame_upper_left[1]
+		points = image_data.get('next_points') or image_data.get('prev_points')
+		if points is None:
+			points = [[0, 0], [1, 0], [0, 1]]
+		editor = imageMarkersEditor(
+			str(selected_path), frame_upper_left, frame_width,
+			frame_width / frame_height, points,
+		)
+		editor.setObjectName("imageFusionEditor")
+		editor.pointsChanged.connect(self.receive_points_changed)
+		editor.frameChanged.connect(self.receive_frame_changed)
+		if self.image_fusion_editor is None:
+			self.workspace_splitter.addWidget(editor)
+		else:
+			index = self.workspace_splitter.indexOf(self.image_fusion_editor)
+			self.workspace_splitter.replaceWidget(index, editor)
+			self.image_fusion_editor.deleteLater()
+		self.image_fusion_editor = editor
+		self.workspace_splitter.setStretchFactor(0, 1)
+		self.workspace_splitter.setStretchFactor(1, 3)
+
 
 def main() -> int:
 	app = QApplication(sys.argv)
 	config_path = Path(__file__).resolve().parent / "prat.json"
 	with config_path.open(encoding="utf-8") as config_file:
 		project_data = json.load(config_file)
-	image_data = project_data["images_data"][0]
 	window = MainApp(project_data.get("video_data", {}), str(config_path))
-	frameUL = image_data["frame"][0]
-	frameLR = image_data["frame"][1]
-	frame_width = frameLR[0] - frameUL[0]
-	frame_height = frameLR[1] - frameUL[1]
-	frame_aspect_ratio = frame_width / frame_height
-	imageEditor = imageMarkersEditor(
-		image_data["filename"], frameUL, frame_width,
-		frame_aspect_ratio, image_data["next_points"],
-	)
-	imageEditor.pointsChanged.connect(window.receive_points_changed)
-	imageEditor.frameChanged.connect(window.receive_frame_changed)
-	window.setCentralWidget(imageEditor)
+	window.set_image_workspace(project_data["images_data"], config_path.parent)
 	window.resize(1000, 700)
 	window.show()
 	return app.exec()
