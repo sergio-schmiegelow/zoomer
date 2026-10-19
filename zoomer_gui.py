@@ -7,7 +7,11 @@ from pathlib import Path
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication, QFileDialog, QMainWindow, QSplitter
 
-from widgets import VideoSettingsDialog, imageFilesAndPreviewArea, imageMarkersEditor
+from widgets import (
+	VideoSettingsDialog,
+	imageFilesAndPreviewArea,
+	imageFusionEditionArea,
+)
 
 
 class MainApp(QMainWindow):
@@ -72,25 +76,26 @@ class MainApp(QMainWindow):
 		if filename:
 			self.export_filename = filename
 
-	def receive_points_changed(self, points):
-		print(f'DEBUG - points changed: {points}')
-
-	def receive_frame_changed(self, frame):
-		print(f'DEBUG - frame changed: {frame}')
-
 	def set_image_workspace(self, image_entries, base_directory):
 		self.image_entries = self.configData["images_data"]
 		self.base_directory = Path(base_directory)
+		if self._normalize_boundary_points():
+			self.save_autosave()
 		self.image_files_and_preview_area = imageFilesAndPreviewArea(self)
 		organizer = self.image_files_and_preview_area.image_files_organizer
-		organizer.selectedImageChanged.connect(self._select_image)
+		organizer.selectedImageChanged.connect(self._select_pair_from_path)
+		organizer.imageFilesChanged.connect(self._organizer_files_changed)
 		self.workspace_splitter = QSplitter(Qt.Orientation.Vertical, self)
 		self.workspace_splitter.addWidget(self.image_files_and_preview_area)
-		self.image_fusion_editor = None
+		self.image_fusion_edition_area = imageFusionEditionArea(self)
+		self.image_fusion_editor = self.image_fusion_edition_area.editor
+		self.image_fusion_editor.pairRequested.connect(self._navigate_pair)
+		self.image_fusion_editor.imageEdited.connect(self._image_edited)
+		self.workspace_splitter.addWidget(self.image_fusion_edition_area)
 		self.setCentralWidget(self.workspace_splitter)
 		paths = [self.base_directory / entry['filename'] for entry in image_entries]
 		organizer.set_image_files(paths)
-		organizer.imageFilesChanged.connect(self._organizer_files_changed)
+		self._show_pair(max(0, organizer.image_list.currentRow()))
 
 	def _organizer_files_changed(self, filenames):
 		entries_by_path = {
@@ -106,14 +111,22 @@ class MainApp(QMainWindow):
 			updated_entries.append(entry)
 		self.image_entries = updated_entries
 		self.configData["images_data"] = updated_entries
+		self._normalize_boundary_points()
 		self.save_autosave()
-		selected_item = self.image_files_and_preview_area.image_files_organizer.image_list.currentItem()
-		if selected_item is not None:
-			self._select_image(selected_item.data(Qt.ItemDataRole.UserRole))
-		elif self.image_fusion_editor is not None:
-			index = self.workspace_splitter.indexOf(self.image_fusion_editor)
-			self.workspace_splitter.widget(index).deleteLater()
-			self.image_fusion_editor = None
+		current_row = self.image_files_and_preview_area.image_files_organizer.image_list.currentRow()
+		self._show_pair(max(0, current_row))
+
+	def _normalize_boundary_points(self):
+		if not self.image_entries:
+			return False
+		changed = False
+		if self.image_entries[0].get("prev_points") is not None:
+			self.image_entries[0]["prev_points"] = None
+			changed = True
+		if self.image_entries[-1].get("next_points") is not None:
+			self.image_entries[-1]["next_points"] = None
+			changed = True
+		return changed
 
 	def _new_image_entry(self, image_path):
 		from widgets import load_oriented_image
@@ -177,39 +190,57 @@ class MainApp(QMainWindow):
 		)
 		temporary_path.replace(self.autosave_path)
 
-	def _select_image(self, filename):
-		self.image_files_and_preview_area.preview_area.set_image(filename)
+	def _paths_for_entries(self):
+		return [
+			str((self.base_directory / entry["filename"]).resolve())
+			for entry in self.image_entries
+		]
+
+	def _select_pair_from_path(self, filename):
 		if not filename:
+			self.image_files_and_preview_area.preview_area.set_image("")
+			self._show_pair(0)
 			return
-		selected_path = Path(filename).resolve()
-		image_data = next((
-			entry for entry in self.image_entries
-			if (self.base_directory / entry['filename']).resolve() == selected_path
-		), None)
-		if image_data is None:
-			return
-		frame_upper_left, frame_lower_right = image_data['frame']
-		frame_width = frame_lower_right[0] - frame_upper_left[0]
-		frame_height = frame_lower_right[1] - frame_upper_left[1]
-		points = image_data.get('next_points') or image_data.get('prev_points')
-		if points is None:
-			points = [[0, 0], [1, 0], [0, 1]]
-		editor = imageMarkersEditor(
-			str(selected_path), frame_upper_left, frame_width,
-			frame_width / frame_height, points,
-		)
-		editor.setObjectName("imageFusionEditor")
-		editor.pointsChanged.connect(self.receive_points_changed)
-		editor.frameChanged.connect(self.receive_frame_changed)
-		if self.image_fusion_editor is None:
-			self.workspace_splitter.addWidget(editor)
+		organizer = self.image_files_and_preview_area.image_files_organizer
+		self._show_pair(max(0, organizer.image_list.currentRow()))
+
+	def _show_pair(self, pair_index):
+		paths = self._paths_for_entries()
+		organizer = self.image_files_and_preview_area.image_files_organizer
+		pair_index = max(0, min(pair_index, max(0, len(paths) - 2)))
+		if paths:
+			selected_index = min(pair_index, len(paths) - 1)
+			self.image_files_and_preview_area.preview_area.set_image(paths[selected_index])
 		else:
-			index = self.workspace_splitter.indexOf(self.image_fusion_editor)
-			self.workspace_splitter.replaceWidget(index, editor)
-			self.image_fusion_editor.deleteLater()
-		self.image_fusion_editor = editor
-		self.workspace_splitter.setStretchFactor(0, 1)
-		self.workspace_splitter.setStretchFactor(1, 3)
+			selected_index = 0
+			self.image_files_and_preview_area.preview_area.set_image("")
+		organizer.set_highlighted_paths(paths[pair_index:pair_index + 2] if len(paths) > 1 else [])
+		self.image_fusion_editor.set_pair(self.image_entries, paths, pair_index)
+
+	def _navigate_pair(self, pair_index):
+		organizer = self.image_files_and_preview_area.image_files_organizer
+		if organizer.image_list.currentRow() == pair_index:
+			self._show_pair(pair_index)
+		else:
+			organizer.image_list.setCurrentRow(pair_index)
+
+	def _image_edited(self, image_index, field, value):
+		if image_index >= len(self.image_entries):
+			return
+		if field == "prev_points" and image_index == 0:
+			return
+		if field == "next_points" and image_index == len(self.image_entries) - 1:
+			return
+		entry = self.image_entries[image_index]
+		if field == "frame":
+			upper_left = value["upper_left"]
+			entry["frame"] = [
+				[upper_left[0], upper_left[1]],
+				[upper_left[0] + value["width"], upper_left[1] + value["height"]],
+			]
+		else:
+			entry[field] = [[point[0], point[1]] for point in value]
+		self.save_autosave()
 
 
 def main() -> int:

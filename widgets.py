@@ -90,6 +90,14 @@ class imageFilesOrganizer(QWidget):
 			for index in range(self.image_list.count())
 		])
 
+	def set_highlighted_paths(self, filenames):
+		highlighted_paths = {str(Path(filename).resolve()) for filename in filenames}
+		for index in range(self.image_list.count()):
+			item = self.image_list.item(index)
+			font = item.font()
+			font.setBold(item.data(Qt.ItemDataRole.UserRole) in highlighted_paths)
+			item.setFont(font)
+
 
 class _ImageFileListWidget(QListWidget):
 	def __init__(self, organizer):
@@ -198,6 +206,108 @@ class imageFilesAndPreviewArea(QSplitter):
 		self.addWidget(self.preview_area)
 		self.setStretchFactor(0, 1)
 		self.setStretchFactor(1, 3)
+
+
+class imageFusionEditor(QWidget):
+	imageEdited = pyqtSignal(int, str, object)
+	pairRequested = pyqtSignal(int)
+
+	def __init__(self, parent=None):
+		super().__init__(parent)
+		self.setObjectName("imageFusionEditor")
+		self.pair_index = 0
+		self.image_entries = []
+		self.image_paths = []
+		self.layout = QVBoxLayout(self)
+		self.navigation = QHBoxLayout()
+		self.previous_button = QPushButton("Previous pair")
+		self.pair_label = QLabel()
+		self.next_button = QPushButton("Next pair")
+		self.navigation.addWidget(self.previous_button)
+		self.navigation.addStretch(1)
+		self.navigation.addWidget(self.pair_label)
+		self.navigation.addStretch(1)
+		self.navigation.addWidget(self.next_button)
+		self.layout.addLayout(self.navigation)
+		self.pair_splitter = QSplitter(Qt.Orientation.Horizontal, self)
+		self.layout.addWidget(self.pair_splitter, 1)
+		self.previous_button.clicked.connect(self._previous_pair)
+		self.next_button.clicked.connect(self._next_pair)
+		self.set_pair([], [], 0)
+
+	def set_pair(self, image_entries, image_paths, pair_index):
+		self.image_entries = image_entries
+		self.image_paths = image_paths
+		self.pair_index = pair_index
+		while self.pair_splitter.count():
+			widget = self.pair_splitter.widget(0)
+			self.pair_splitter.widget(0).setParent(None)
+			widget.deleteLater()
+
+		pair_count = max(0, len(image_entries) - 1)
+		if pair_count == 0:
+			self.pair_label.setText("Add at least two images to edit a pair")
+			self.previous_button.setEnabled(False)
+			self.next_button.setEnabled(False)
+			return
+
+		self.pair_index = max(0, min(pair_index, pair_count - 1))
+		self.pair_label.setText(f"Pair {self.pair_index + 1} / {pair_count}")
+		self.previous_button.setEnabled(self.pair_index > 0)
+		self.next_button.setEnabled(self.pair_index < pair_count - 1)
+		for offset, points_field in ((0, "next_points"), (1, "prev_points")):
+			entry_index = self.pair_index + offset
+			entry = image_entries[entry_index]
+			path = image_paths[entry_index]
+			column = QWidget(self.pair_splitter)
+			column_layout = QVBoxLayout(column)
+			filename_label = QLabel(Path(path).name)
+			filename_label.setObjectName("fusionFilename")
+			filename_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+			font = filename_label.font()
+			font.setBold(True)
+			filename_label.setFont(font)
+			column_layout.addWidget(filename_label)
+			frame_top_left, frame_bottom_right = entry["frame"]
+			frame_width = frame_bottom_right[0] - frame_top_left[0]
+			frame_height = frame_bottom_right[1] - frame_top_left[1]
+			points = entry.get(points_field)
+			if points is None:
+				points = [[0, 0], [1, 0], [0, 1]]
+			editor = imageMarkersEditor(
+				path, frame_top_left, frame_width, frame_width / frame_height, points, column
+			)
+			editor.setObjectName("imageMarkersEditor")
+			editor.frameChanged.connect(
+				lambda value, index=entry_index: self.imageEdited.emit(index, "frame", value)
+			)
+			editor.pointsChanged.connect(
+				lambda value, index=entry_index, field=points_field:
+					self.imageEdited.emit(index, field, value)
+			)
+			column_layout.addWidget(editor, 1)
+			column.filename_label = filename_label
+			column.editor = editor
+			self.pair_splitter.addWidget(column)
+		self.pair_splitter.setStretchFactor(0, 1)
+		self.pair_splitter.setStretchFactor(1, 1)
+
+	def _previous_pair(self):
+		if self.pair_index > 0:
+			self.pairRequested.emit(self.pair_index - 1)
+
+	def _next_pair(self):
+		if self.pair_index < len(self.image_entries) - 2:
+			self.pairRequested.emit(self.pair_index + 1)
+
+
+class imageFusionEditionArea(QWidget):
+	def __init__(self, parent=None):
+		super().__init__(parent)
+		self.setObjectName("imageFusionEditionArea")
+		self.layout = QVBoxLayout(self)
+		self.editor = imageFusionEditor(self)
+		self.layout.addWidget(self.editor)
 
 
 class VideoSettingsDialog(QDialog):
