@@ -33,6 +33,7 @@ def load_oriented_image(filename):
 
 class imageFilesOrganizer(QWidget):
 	selectedImageChanged = pyqtSignal(str)
+	imageFilesChanged = pyqtSignal(list)
 
 	def __init__(self, parent=None):
 		super().__init__(parent)
@@ -73,6 +74,7 @@ class imageFilesOrganizer(QWidget):
 			added_items.append(item)
 		if added_items:
 			self.image_list.setCurrentItem(added_items[0])
+			self._emit_image_files_changed()
 
 	def set_image_files(self, filenames):
 		self.image_list.clear()
@@ -81,6 +83,12 @@ class imageFilesOrganizer(QWidget):
 	def _selection_changed(self, row):
 		item = self.image_list.item(row) if row >= 0 else None
 		self.selectedImageChanged.emit(item.data(Qt.ItemDataRole.UserRole) if item else "")
+
+	def _emit_image_files_changed(self):
+		self.imageFilesChanged.emit([
+			self.image_list.item(index).data(Qt.ItemDataRole.UserRole)
+			for index in range(self.image_list.count())
+		])
 
 
 class _ImageFileListWidget(QListWidget):
@@ -102,6 +110,7 @@ class _ImageFileListWidget(QListWidget):
 					self.setCurrentRow(min(row, self.count() - 1))
 				else:
 					self.organizer._selection_changed(-1)
+				self.organizer._emit_image_files_changed()
 			return
 		super().keyPressEvent(event)
 
@@ -126,6 +135,7 @@ class _ImageFileListWidget(QListWidget):
 	def dropEvent(self, event):
 		if event.source() is self:
 			super().dropEvent(event)
+			self.organizer._emit_image_files_changed()
 			return
 		if not self._has_image_urls(event.mimeData().urls()):
 			event.ignore()
