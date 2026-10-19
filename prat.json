@@ -1,5 +1,9 @@
 {
-    "video_size":[960, 540],
+    "video_data":{
+        "size":[960, 540],
+        "FPS":30,
+        "duration":10
+    }, 
     "images_data":
     [
         {

@@ -2,10 +2,135 @@ from pathlib import Path
 
 from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QImage, QPainter, QPen
-from PyQt6.QtWidgets import QPushButton, QWidget
+from PyQt6.QtWidgets import (
+	QComboBox,
+	QDialog,
+	QDialogButtonBox,
+	QDoubleSpinBox,
+	QFormLayout,
+	QHBoxLayout,
+	QPushButton,
+	QSpinBox,
+	QWidget,
+)
 
 
 CROSS_SIZE = 20
+
+
+class VideoSettingsDialog(QDialog):
+	VIDEO_SIZES = {
+		"SD 480p (640 x 480)": (640, 480),
+		"HD 720p (1280 x 720)": (1280, 720),
+		"Full HD 1080p (1920 x 1080)": (1920, 1080),
+		"QHD 1440p (2560 x 1440)": (2560, 1440),
+		"4K UHD (3840 x 2160)": (3840, 2160),
+	}
+	FRAME_RATES = (23.976, 24, 25, 29.97, 30, 50, 59.94, 60, 120)
+
+	def __init__(self, video_data, parent=None):
+		super().__init__(parent)
+		self.setWindowTitle("Video Settings")
+		self.setModal(True)
+		layout = QFormLayout(self)
+
+		self.video_size_combo = QComboBox()
+		for label, dimensions in self.VIDEO_SIZES.items():
+			self.video_size_combo.addItem(label, dimensions)
+		self.video_size_combo.addItem("Custom", None)
+		size_row = QHBoxLayout()
+		self.width_spin = QSpinBox()
+		self.width_spin.setRange(1, 16384)
+		self.width_spin.setSuffix(" px")
+		self.height_spin = QSpinBox()
+		self.height_spin.setRange(1, 16384)
+		self.height_spin.setSuffix(" px")
+		size_row.addWidget(self.width_spin)
+		size_row.addWidget(self.height_spin)
+		layout.addRow("Video size", self.video_size_combo)
+		layout.addRow("Custom dimensions", size_row)
+
+		self.frame_rate_combo = QComboBox()
+		for frame_rate in self.FRAME_RATES:
+			label = f"{frame_rate:g} fps"
+			self.frame_rate_combo.addItem(label, frame_rate)
+		self.frame_rate_combo.addItem("Custom", None)
+		self.custom_frame_rate = QDoubleSpinBox()
+		self.custom_frame_rate.setRange(1, 240)
+		self.custom_frame_rate.setDecimals(3)
+		self.custom_frame_rate.setSuffix(" fps")
+		layout.addRow("Framerate", self.frame_rate_combo)
+		layout.addRow("Custom framerate", self.custom_frame_rate)
+
+		self.duration_spin = QDoubleSpinBox()
+		self.duration_spin.setRange(0.01, 86400)
+		self.duration_spin.setDecimals(2)
+		self.duration_spin.setSuffix(" s")
+		layout.addRow("Duration", self.duration_spin)
+
+		buttons = QDialogButtonBox(
+			QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+		)
+		buttons.accepted.connect(self.accept)
+		buttons.rejected.connect(self.reject)
+		layout.addRow(buttons)
+
+		self.video_size_combo.currentIndexChanged.connect(self._select_video_size)
+		self.frame_rate_combo.currentIndexChanged.connect(self._select_frame_rate)
+		self._initialize_values(video_data)
+		self._select_video_size(self.video_size_combo.currentIndex())
+		self._select_frame_rate(self.frame_rate_combo.currentIndex())
+
+	def _initialize_values(self, video_data):
+		width, height = video_data.get("size", (1920, 1080))
+		matching_size = next(
+			(index for index, dimensions in enumerate(self.VIDEO_SIZES.values())
+			 if dimensions == (width, height)),
+			-1,
+		)
+		if matching_size >= 0:
+			self.video_size_combo.setCurrentIndex(matching_size)
+		else:
+			self.video_size_combo.setCurrentIndex(self.video_size_combo.count() - 1)
+		self.width_spin.setValue(width)
+		self.height_spin.setValue(height)
+
+		frame_rate = video_data.get("FPS", 30)
+		matching_rate = next(
+			(index for index, rate in enumerate(self.FRAME_RATES) if rate == frame_rate),
+			-1,
+		)
+		if matching_rate >= 0:
+			self.frame_rate_combo.setCurrentIndex(matching_rate)
+		else:
+			self.frame_rate_combo.setCurrentIndex(self.frame_rate_combo.count() - 1)
+		self.custom_frame_rate.setValue(frame_rate)
+		self.duration_spin.setValue(video_data.get("duration", 10))
+
+	def _select_video_size(self, index):
+		custom = self.video_size_combo.itemData(index) is None
+		self.width_spin.setEnabled(custom)
+		self.height_spin.setEnabled(custom)
+		if not custom:
+			width, height = self.video_size_combo.itemData(index)
+			self.width_spin.setValue(width)
+			self.height_spin.setValue(height)
+
+	def _select_frame_rate(self, index):
+		frame_rate = self.frame_rate_combo.itemData(index)
+		custom = frame_rate is None
+		self.custom_frame_rate.setEnabled(custom)
+		if not custom:
+			self.custom_frame_rate.setValue(frame_rate)
+
+	def settings(self):
+		selected_size = self.video_size_combo.currentData()
+		frame_rate = self.frame_rate_combo.currentData()
+		return {
+			"size": selected_size or (self.width_spin.value(), self.height_spin.value()),
+			"FPS": frame_rate if frame_rate is not None else self.custom_frame_rate.value(),
+			"duration": self.duration_spin.value(),
+		}
 
 
 class imageMarkersEditor(QWidget):
