@@ -7,7 +7,7 @@
     "images_data":
     [
         {
-            "filename":"prat_1.jpeg",
+            "image":"prat_1.jpeg",
             "frame":
             [
                 [7, 488],
@@ -22,7 +22,7 @@
             ]
         },
         {
-            "filename":"prat_2.jpeg",
+            "image":"prat_2.jpeg",
             "frame":
             [
                 [253, 550],

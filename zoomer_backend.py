@@ -1,6 +1,7 @@
 import cv2 as cv
 import numpy as np
 import json
+from pathlib import Path
 
 NUM_FRAMES = 100
 CROSS_SIZE = 10
@@ -18,22 +19,43 @@ def polygonIsInsidePolygon(innerPolygon:np.ndarray, outerPolygon:np.ndarray)->bo
     return True
 #-------------------------------------------------------------------------
 class imageClass:
+    #---------------------------------------------------------------------
     def __init__(self, filename:str):
-        self.filename = filename
-        self.image = cv.imread(filename)
+        self.imagePath = Path(filename)
+        if not self.imagePath.exists():
+            raise ValueError(f"Image file does not exist: {filename}")
+        self.imagePath = self.imagePath.resolve()
+        self.cvImage = cv.imread(str(self.imagePath))
+        self.qtImage = None
+    #---------------------------------------------------------------------
+    def getImagePath(self)->str:
+        return self.imagePath
+    #---------------------------------------------------------------------
+    def getCvImage(self)->np.ndarray:
+        return self.cvImage
+    #---------------------------------------------------------------------
+    def getQtImage(self):
+        return self.qtImage
+    #---------------------------------------------------------------------
+    def setQtImage(self, qtImage):
+        self.qtImage = qtImage
 #-------------------------------------------------------------------------
 def loadConfig(filename:str)->dict:
     with open(filename, 'r') as f:
         cfgDict = json.load(f)
     for imageData in cfgDict['images_data']:
-        imageData['filename'] = imageClass(imageData['filename'])
+        imageData['image'] = imageClass(str(imageData['image']))
     return cfgDict
 #-------------------------------------------------------------------------
 def saveConfig(filename:str, cfgDict:dict)->None:
-    #make a deep copy of cfgDict to avoid saving the image objects
     cfgDictCopy = dict(cfgDict)
-    for imageData in cfgDictCopy['images_data']:
-        imageData['filename'] = imageData['filename'].filename
+    cfgDictCopy['images_data'] = []
+    for imageData in cfgDict['images_data']:
+        imageDataCopy = dict(imageData)
+        imageObject = imageDataCopy['image']
+        if isinstance(imageObject, imageClass):
+            imageDataCopy['image'] = str(imageObject.getImagePath())
+        cfgDictCopy['images_data'].append(imageDataCopy)
     with open(filename, 'w') as f:
         json.dump(cfgDictCopy, f, indent=2)
     return
@@ -205,21 +227,21 @@ if __name__ == "__main__":
     videoDims = np.array(cfgDict['video_data']['size'], dtype=np.int32)
     
     #Extract the first images pair data from the configuration dictionary
-    img0 = imageClass(cfgDict['images_data'][0]['filename'])
+    img0 = cfgDict['images_data'][0]['image']
     frame0 = np.array(cfgDict['images_data'][0]['frame'], dtype=np.float32)
     nextPoints0 = np.array(cfgDict['images_data'][0]['next_points'], dtype=np.float32)
     
-    img1 = imageClass(cfgDict['images_data'][1]['filename'])
+    img1 = cfgDict['images_data'][1]['image']
     frame1 = np.array(cfgDict['images_data'][1]['frame'], dtype=np.float32)
     prevPoints1 = np.array(cfgDict['images_data'][1]['prev_points'], dtype=np.float32)
 
-    minBlendAlpha, maxBlendAlpha = getBlendAlphaRange(videoDims, img0.image, nextPoints0, frame0, img1.image, prevPoints1, frame1)
+    minBlendAlpha, maxBlendAlpha = getBlendAlphaRange(videoDims, img0.getCvImage(), nextPoints0, frame0, img1.getCvImage(), prevPoints1, frame1)
     print(f"DEBUG - blendAlphaRange = {minBlendAlpha} to {maxBlendAlpha}")
     for sizeAlpha in np.linspace(0, 1, num=NUM_FRAMES):
         blendAlpha = (sizeAlpha - minBlendAlpha) / (maxBlendAlpha - minBlendAlpha) 
         blendAlpha = np.clip(blendAlpha, 0.0, 1.0)
         print(f"DEBUG - sizeAlpha = {sizeAlpha}, blendAlpha = {blendAlpha}")
-        blendedFrame = createBlendedFrame(videoDims, img0.image, nextPoints0, frame0, img1.image, prevPoints1, frame1, sizeAlpha, blendAlpha)
+        blendedFrame = createBlendedFrame(videoDims, img0.getCvImage(), nextPoints0, frame0, img1.getCvImage(), prevPoints1, frame1, sizeAlpha, blendAlpha)
         cv.imshow(f'Blended Frame', blendedFrame)
         cv.waitKey(1)
 
@@ -232,7 +254,7 @@ if __name__ == "__main__":
     
     img0FrameTransformer = affineTransformerClass(nextPoints0, videoTransformedPrevPoints1)
     
-    videoFrame0 = img0FrameTransformer.transformImage(img0.image, videoDims)
+    videoFrame0 = img0FrameTransformer.transformImage(img0.getCvImage(), videoDims)
     markedVideoFrame0 = generateImageWithMarkers(videoFrame0, 
                                                 [[0, 0],videoFrame0.shape[:2][::-1]], 
                                                 None, 

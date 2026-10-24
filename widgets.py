@@ -25,24 +25,42 @@ from PyQt6.QtWidgets import (
 CROSS_SIZE = 20
 
 
-def load_oriented_image(source):
-	preloaded = getattr(source, "image", None)
-	if preloaded is not None:
-		if preloaded.ndim == 2:
-			height, width = preloaded.shape
-			return QImage(
-				preloaded.data, width, height, preloaded.strides[0],
+def load_oriented_image(image_object):
+	if hasattr(image_object, "getCvImage") and hasattr(image_object, "setQtImage"):
+		qt_image = image_object.getQtImage()
+		if qt_image is not None:
+			return qt_image
+		cv_image = image_object.getCvImage()
+		if cv_image is None:
+			return QImage()
+		if cv_image.ndim == 2:
+			height, width = cv_image.shape
+			qt_image = QImage(
+				cv_image.data, width, height, cv_image.strides[0],
 				QImage.Format.Format_Grayscale8,
 			).copy()
-		rgb_image = cv.cvtColor(preloaded, cv.COLOR_BGR2RGB)
-		height, width = rgb_image.shape[:2]
-		return QImage(
-			rgb_image.data, width, height, rgb_image.strides[0],
-			QImage.Format.Format_RGB888,
-		).copy()
-	reader = QImageReader(str(source))
+		elif cv_image.shape[2] == 4:
+			rgba_image = cv.cvtColor(cv_image, cv.COLOR_BGRA2RGBA)
+			height, width = rgba_image.shape[:2]
+			qt_image = QImage(
+				rgba_image.data, width, height, rgba_image.strides[0],
+				QImage.Format.Format_RGBA8888,
+			).copy()
+		else:
+			rgb_image = cv.cvtColor(cv_image, cv.COLOR_BGR2RGB)
+			height, width = rgb_image.shape[:2]
+			qt_image = QImage(
+				rgb_image.data, width, height, rgb_image.strides[0],
+				QImage.Format.Format_RGB888,
+			).copy()
+		image_object.setQtImage(qt_image)
+		return qt_image
+	reader = QImageReader(str(image_object))
 	reader.setAutoTransform(True)
 	return reader.read()
+
+
+
 
 class imageFilesOrganizer(QWidget):
 	selectedImageChanged = pyqtSignal(str)
@@ -186,11 +204,11 @@ class previewArea(QLabel):
 		self.setStyleSheet("background-color: #202020; color: white;")
 		self._pixmap = QPixmap()
 
-	def set_image(self, filename):
-		image = load_oriented_image(filename) if filename else QImage()
+	def set_image(self, image_object):
+		image = load_oriented_image(image_object) if image_object else QImage()
 		if image.isNull():
 			self._pixmap = QPixmap()
-			self.setText("Select an image to preview" if not filename else "Unable to load image")
+			self.setText("Select an image to preview" if not image_object else "Unable to load image")
 		else:
 			self._pixmap = QPixmap.fromImage(image)
 			self.setText("")
@@ -288,7 +306,7 @@ class imageFusionEditor(QWidget):
 			if points is None:
 				points = [[0, 0], [1, 0], [0, 1]]
 			editor = imageMarkersEditor(
-				entry["filename"], frame_top_left, frame_width,
+				entry["image"], frame_top_left, frame_width,
 				frame_width / frame_height, points, column
 			)
 			editor.setObjectName("imageMarkersEditor")
@@ -445,7 +463,7 @@ class imageMarkersEditor(QWidget):
 
 	def __init__(self, image_filename, frame_upper_left, frame_width, frame_aspect_ratio, points, parent=None):
 		super().__init__(parent)
-		filename = getattr(image_filename, "filename", image_filename)
+		filename = image_filename.getImagePath() if hasattr(image_filename, "getImagePath") else image_filename
 		image_path = Path(filename)
 		if not image_path.is_absolute():
 			image_path = Path(__file__).resolve().parent / image_path

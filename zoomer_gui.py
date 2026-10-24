@@ -1,5 +1,4 @@
 import sys
-import json
 import math
 import random
 from pathlib import Path
@@ -12,6 +11,7 @@ from widgets import (
 	imageFilesAndPreviewArea,
 	imageFusionEditionArea,
 )
+from zoomer_backend import imageClass, loadConfig, saveConfig
 
 
 class MainApp(QMainWindow):
@@ -43,7 +43,7 @@ class MainApp(QMainWindow):
 		export_action.triggered.connect(self.select_export_filename)
 
 	def save_project(self, _checked=False):
-		pass
+		saveConfig(self.project_filename, self.configData)
 
 	def save_as(self, _checked=False):
 		filename, _selected_filter = QFileDialog.getSaveFileName(
@@ -52,6 +52,7 @@ class MainApp(QMainWindow):
 		)
 		if filename:
 			self.project_filename = filename
+			saveConfig(self.project_filename, self.configData)
 
 	def new_project(self, _checked=False):
 		filename, _selected_filter = QFileDialog.getSaveFileName(
@@ -93,13 +94,24 @@ class MainApp(QMainWindow):
 		self.image_fusion_editor.imageEdited.connect(self._image_edited)
 		self.workspace_splitter.addWidget(self.image_fusion_edition_area)
 		self.setCentralWidget(self.workspace_splitter)
-		paths = [self.base_directory / entry['filename'] for entry in image_entries]
+		paths = [self._path_for_entry(entry) for entry in image_entries]
 		organizer.set_image_files(paths)
 		self._show_pair(max(0, organizer.image_list.currentRow()))
 
+	@staticmethod
+	def _image_path(image_entry):
+		image_object = image_entry["image"]
+		if isinstance(image_object, imageClass):
+			return Path(image_object.getImagePath())
+		return Path(image_object)
+
+	def _path_for_entry(self, image_entry):
+		path = self._image_path(image_entry)
+		return path if path.is_absolute() else self.base_directory / path
+
 	def _organizer_files_changed(self, filenames):
 		entries_by_path = {
-			(self.base_directory / entry["filename"]).resolve(): entry
+			self._path_for_entry(entry).resolve(): entry
 			for entry in self.image_entries
 		}
 		updated_entries = []
@@ -129,15 +141,15 @@ class MainApp(QMainWindow):
 		return changed
 
 	def _new_image_entry(self, image_path):
-		from widgets import load_oriented_image
-
-		image = load_oriented_image(image_path)
-		if image.isNull():
+		image_object = imageClass(str(image_path))
+		image = image_object.getCvImage()
+		if image is None:
 			raise ValueError(f"Unable to load image: {image_path}")
 		video_width, video_height = self.video_settings.get("size", (960, 540))
 		video_aspect = float(video_width) / float(video_height)
-		image_width = float(image.width())
-		image_height = float(image.height())
+		image_height, image_width = image.shape[:2]
+		image_width = float(image_width)
+		image_height = float(image_height)
 		if image_width / image_height > video_aspect:
 			frame_height = image_height
 			frame_width = frame_height * video_aspect
@@ -151,7 +163,7 @@ class MainApp(QMainWindow):
 			[frame_x + frame_width, frame_y + frame_height],
 		]
 		return {
-			"filename": str(image_path),
+			"image": image_object,
 			"frame": frame,
 			"prev_points": self._random_equilateral_triangle(frame_x, frame_y, frame_width, frame_height),
 			"next_points": self._random_equilateral_triangle(frame_x, frame_y, frame_width, frame_height),
@@ -185,14 +197,12 @@ class MainApp(QMainWindow):
 	def save_autosave(self):
 		self.autosave_path.parent.mkdir(parents=True, exist_ok=True)
 		temporary_path = self.autosave_path.with_name(self.autosave_path.name + ".tmp")
-		temporary_path.write_text(
-			json.dumps(self.configData, indent=2) + "\n", encoding="utf-8"
-		)
+		saveConfig(str(temporary_path), self.configData)
 		temporary_path.replace(self.autosave_path)
 
 	def _paths_for_entries(self):
 		return [
-			str((self.base_directory / entry["filename"]).resolve())
+			str(self._path_for_entry(entry).resolve())
 			for entry in self.image_entries
 		]
 
@@ -210,7 +220,9 @@ class MainApp(QMainWindow):
 		pair_index = max(0, min(pair_index, max(0, len(paths) - 2)))
 		if paths:
 			selected_index = min(pair_index, len(paths) - 1)
-			self.image_files_and_preview_area.preview_area.set_image(paths[selected_index])
+			self.image_files_and_preview_area.preview_area.set_image(
+				self.image_entries[selected_index]["image"]
+			)
 		else:
 			selected_index = 0
 			self.image_files_and_preview_area.preview_area.set_image("")
@@ -247,12 +259,10 @@ def main() -> int:
 	app = QApplication(sys.argv)
 	config_path = Path(__file__).resolve().parent / "autosave.json"
 	if config_path.exists():
-		with config_path.open(encoding="utf-8") as config_file:
-			config_data = json.load(config_file)
+		config_data = loadConfig(str(config_path))
 	else:
 		fallback_path = Path(__file__).resolve().parent / "prat.json"
-		with fallback_path.open(encoding="utf-8") as config_file:
-			config_data = json.load(config_file)
+		config_data = loadConfig(str(fallback_path))
 	window = MainApp(config_data, config_path)
 	window.set_image_workspace(config_data["images_data"], config_path.parent)
 	window.resize(1000, 700)
