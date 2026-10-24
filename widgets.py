@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import cv2 as cv
 from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QImage, QImageReader, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
@@ -21,15 +22,27 @@ from PyQt6.QtWidgets import (
 	QWidget,
 )
 
-
 CROSS_SIZE = 20
 
 
-def load_oriented_image(filename):
-	reader = QImageReader(str(filename))
+def load_oriented_image(source):
+	preloaded = getattr(source, "image", None)
+	if preloaded is not None:
+		if preloaded.ndim == 2:
+			height, width = preloaded.shape
+			return QImage(
+				preloaded.data, width, height, preloaded.strides[0],
+				QImage.Format.Format_Grayscale8,
+			).copy()
+		rgb_image = cv.cvtColor(preloaded, cv.COLOR_BGR2RGB)
+		height, width = rgb_image.shape[:2]
+		return QImage(
+			rgb_image.data, width, height, rgb_image.strides[0],
+			QImage.Format.Format_RGB888,
+		).copy()
+	reader = QImageReader(str(source))
 	reader.setAutoTransform(True)
 	return reader.read()
-
 
 class imageFilesOrganizer(QWidget):
 	selectedImageChanged = pyqtSignal(str)
@@ -275,7 +288,8 @@ class imageFusionEditor(QWidget):
 			if points is None:
 				points = [[0, 0], [1, 0], [0, 1]]
 			editor = imageMarkersEditor(
-				path, frame_top_left, frame_width, frame_width / frame_height, points, column
+				entry["filename"], frame_top_left, frame_width,
+				frame_width / frame_height, points, column
 			)
 			editor.setObjectName("imageMarkersEditor")
 			editor.frameChanged.connect(
@@ -431,10 +445,11 @@ class imageMarkersEditor(QWidget):
 
 	def __init__(self, image_filename, frame_upper_left, frame_width, frame_aspect_ratio, points, parent=None):
 		super().__init__(parent)
-		image_path = Path(image_filename)
+		filename = getattr(image_filename, "filename", image_filename)
+		image_path = Path(filename)
 		if not image_path.is_absolute():
 			image_path = Path(__file__).resolve().parent / image_path
-		self.image = load_oriented_image(image_path)
+		self.image = load_oriented_image(image_filename)
 		if self.image.isNull():
 			raise ValueError(f"Unable to load image: {image_path}")
 

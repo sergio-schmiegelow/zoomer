@@ -17,6 +17,27 @@ def polygonIsInsidePolygon(innerPolygon:np.ndarray, outerPolygon:np.ndarray)->bo
             return False
     return True
 #-------------------------------------------------------------------------
+class imageClass:
+    def __init__(self, filename:str):
+        self.filename = filename
+        self.image = cv.imread(filename)
+#-------------------------------------------------------------------------
+def loadConfig(filename:str)->dict:
+    with open(filename, 'r') as f:
+        cfgDict = json.load(f)
+    for imageData in cfgDict['images_data']:
+        imageData['filename'] = imageClass(imageData['filename'])
+    return cfgDict
+#-------------------------------------------------------------------------
+def saveConfig(filename:str, cfgDict:dict)->None:
+    #make a deep copy of cfgDict to avoid saving the image objects
+    cfgDictCopy = dict(cfgDict)
+    for imageData in cfgDictCopy['images_data']:
+        imageData['filename'] = imageData['filename'].filename
+    with open(filename, 'w') as f:
+        json.dump(cfgDictCopy, f, indent=2)
+    return
+#-------------------------------------------------------------------------
 class affineTransformerClass:
     #---------------------------------------------------------------------
     def __init__(self, startPoints:np.ndarray, endPoints:np.ndarray)->None:
@@ -177,25 +198,28 @@ def createBlendedFrame(videoSize:np.ndarray,
 
 if __name__ == "__main__": 
     cfgFile = 'prat.json'
-    cfgDict = json.load(open(cfgFile, 'r'))
-    videoDims = np.array(cfgDict['video_size'], dtype=np.int32)
+    cfgDict = loadConfig(cfgFile)
+    saveConfig("out.json", cfgDict)
+
+    
+    videoDims = np.array(cfgDict['video_data']['size'], dtype=np.int32)
     
     #Extract the first images pair data from the configuration dictionary
-    img0 = cv.imread(cfgDict['images_data'][0]['filename'])
+    img0 = imageClass(cfgDict['images_data'][0]['filename'])
     frame0 = np.array(cfgDict['images_data'][0]['frame'], dtype=np.float32)
     nextPoints0 = np.array(cfgDict['images_data'][0]['next_points'], dtype=np.float32)
     
-    img1 = cv.imread(cfgDict['images_data'][1]['filename'])
+    img1 = imageClass(cfgDict['images_data'][1]['filename'])
     frame1 = np.array(cfgDict['images_data'][1]['frame'], dtype=np.float32)
     prevPoints1 = np.array(cfgDict['images_data'][1]['prev_points'], dtype=np.float32)
 
-    minBlendAlpha, maxBlendAlpha = getBlendAlphaRange(videoDims, img0, nextPoints0, frame0, img1, prevPoints1, frame1)
+    minBlendAlpha, maxBlendAlpha = getBlendAlphaRange(videoDims, img0.image, nextPoints0, frame0, img1.image, prevPoints1, frame1)
     print(f"DEBUG - blendAlphaRange = {minBlendAlpha} to {maxBlendAlpha}")
     for sizeAlpha in np.linspace(0, 1, num=NUM_FRAMES):
         blendAlpha = (sizeAlpha - minBlendAlpha) / (maxBlendAlpha - minBlendAlpha) 
         blendAlpha = np.clip(blendAlpha, 0.0, 1.0)
         print(f"DEBUG - sizeAlpha = {sizeAlpha}, blendAlpha = {blendAlpha}")
-        blendedFrame = createBlendedFrame(videoDims, img0, nextPoints0, frame0, img1, prevPoints1, frame1, sizeAlpha, blendAlpha)
+        blendedFrame = createBlendedFrame(videoDims, img0.image, nextPoints0, frame0, img1.image, prevPoints1, frame1, sizeAlpha, blendAlpha)
         cv.imshow(f'Blended Frame', blendedFrame)
         cv.waitKey(1)
 
@@ -208,7 +232,7 @@ if __name__ == "__main__":
     
     img0FrameTransformer = affineTransformerClass(nextPoints0, videoTransformedPrevPoints1)
     
-    videoFrame0 = img0FrameTransformer.transformImage(img0, videoDims)
+    videoFrame0 = img0FrameTransformer.transformImage(img0.image, videoDims)
     markedVideoFrame0 = generateImageWithMarkers(videoFrame0, 
                                                 [[0, 0],videoFrame0.shape[:2][::-1]], 
                                                 None, 
