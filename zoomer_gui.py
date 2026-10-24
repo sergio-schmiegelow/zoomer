@@ -93,6 +93,7 @@ class MainApp(QMainWindow):
 		self.image_fusion_editor.pairRequested.connect(self._navigate_pair)
 		self.image_fusion_editor.imageEdited.connect(self._image_edited)
 		self.image_fusion_editor.fusionPreviewRequested.connect(self._update_fusion_preview)
+		self.image_fusion_editor.alphaRangeEdited.connect(self._alpha_range_edited)
 		self._fusion_preview_timer = QTimer(self)
 		self._fusion_preview_timer.setSingleShot(True)
 		self._fusion_preview_timer.setInterval(75)
@@ -255,6 +256,12 @@ class MainApp(QMainWindow):
 			interpolationMethod="linear",
 		)
 		self.image_files_and_preview_area.preview_area.set_fusion_frame(frame)
+
+	def _alpha_range_edited(self, pair_index, alpha_range):
+		if not 0 <= pair_index < len(self.image_entries):
+			return
+		self.image_entries[pair_index]["alpha_range"] = list(alpha_range)
+		self.save_autosave()
 
 	def _image_edited(self, image_index, field, value):
 		if image_index >= len(self.image_entries):

@@ -164,7 +164,7 @@ def interpolatePointsLinear(points0:np.ndarray, points1:np.ndarray, alpha:float)
     # Interpolate between two sets of points linearly based on the alpha value.
     return (1 - alpha) * points0 + alpha * points1
 #-------------------------------------------------------------------------
-def interpolatePointsGP(points0:np.ndarray, points1:np.ndarray, alpha:float)->np.ndarray:
+def interpolatePointsLog(points0:np.ndarray, points1:np.ndarray, alpha:float)->np.ndarray:
     # Interpolate between two sets of points based on the specified interpolation method.
     #Calculate the relative size of the two sets of points
     sizeRatio = pointsMeanSizeRatio(points0, points1)
@@ -175,11 +175,11 @@ def interpolatePointsGP(points0:np.ndarray, points1:np.ndarray, alpha:float)->np
     #print(f'DEBUG - sizeRatio: {sizeRatio}, alpha: {alpha}, linearSizeRatio: {linearSizeRatio}, pgAlpha: {pgAlpha}')
     return (1 - pgAlpha) * points0 + pgAlpha * points1
 #-------------------------------------------------------------------------
-def interpolatePoints(points0:np.ndarray, points1:np.ndarray, alpha:float, interpolationMethod:str='gp')->np.ndarray:
+def interpolatePoints(points0:np.ndarray, points1:np.ndarray, alpha:float, interpolationMethod:str='log')->np.ndarray:
     if interpolationMethod == 'linear':
         return interpolatePointsLinear(points0, points1, alpha)
-    elif interpolationMethod == 'gp':
-        return interpolatePointsGP(points0, points1, alpha)
+    elif interpolationMethod == 'log':
+        return interpolatePointsLog(points0, points1, alpha)
     else:
         raise ValueError(f"Unknown interpolation method: {interpolationMethod}")
 #-------------------------------------------------------------------------
@@ -187,7 +187,7 @@ def createIntermediateFrame(videoSize:np.ndarray,
                             img0:np.ndarray, points0:np.ndarray, frame0:np.ndarray,
                                              points1:np.ndarray, frame1:np.ndarray,
                             sizeAlpha:float, checkFill:bool=False,
-                            interpolationMethod:str='gp')->np.ndarray:
+                            interpolationMethod:str='log')->np.ndarray:
     #Convert the points0 to frame0 coordinates
     videoTransformedPoints0 = convertPointsToVideoDimensions(points0, frame0, videoSize)
     #Convert the points1 to frame1 coordinates
@@ -219,7 +219,7 @@ def getBlendAlphaRange(videoSize:np.ndarray,
                 maxSizeAlphaForBlending = testSizeAlpha
     return minSizeAlphaForBlending, maxSizeAlphaForBlending
 #-------------------------------------------------------------------------
-def createBlendedFrame(configData:dict, index:int, sizeAlpha:float, blendAlpha:float, interpolationMethod:str='gp')->np.ndarray:
+def createBlendedFrame(configData:dict, index:int, sizeAlpha:float, blendAlpha:float, interpolationMethod:str='log')->np.ndarray:
     videoSize = np.array(configData['video_data']['size'], dtype=np.int32)
     
     imgPrev =                 configData['images_data'][index]['image'].getCvImage()

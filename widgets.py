@@ -460,6 +460,7 @@ class imageFusionEditor(QWidget):
 	imageEdited = pyqtSignal(int, str, object)
 	pairRequested = pyqtSignal(int)
 	fusionPreviewRequested = pyqtSignal(int, float, float)
+	alphaRangeEdited = pyqtSignal(int, object)
 
 	def __init__(self, parent=None):
 		super().__init__(parent)
@@ -519,6 +520,7 @@ class imageFusionEditor(QWidget):
 
 	def _alpha_range_changed(self, lower, upper):
 		self.alpha_range_value.setText(f"{lower}% - {upper}%")
+		self.alphaRangeEdited.emit(self.pair_index, [lower / 100, upper / 100])
 		self._emit_fusion_preview_request()
 
 	def _emit_fusion_preview_request(self):
@@ -560,6 +562,14 @@ class imageFusionEditor(QWidget):
 			return
 
 		self.pair_index = max(0, min(pair_index, pair_count - 1))
+		alpha_range = image_entries[self.pair_index].get("alpha_range", [0.0, 1.0])
+		self.alpha_range_slider.setValues(
+			round(float(alpha_range[0]) * 100),
+			round(float(alpha_range[1]) * 100),
+		)
+		self.alpha_range_value.setText(
+			f"{self.alpha_range_slider.values[0]}% - {self.alpha_range_slider.values[1]}%"
+		)
 		self.fusion_step_slider.setEnabled(True)
 		self.alpha_range_slider.setEnabled(True)
 		self.pair_label.setText(f"Pair {self.pair_index + 1} / {pair_count}")
