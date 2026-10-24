@@ -288,6 +288,12 @@ class previewArea(QWidget):
 		self.fusion_image_label.set_source_pixmap(self._fusion_pixmap)
 		self._update_previews()
 
+	def set_fusion_error(self, message):
+		self._fusion_pixmap = QPixmap()
+		self.fusion_image_label._source_pixmap = QPixmap()
+		self.fusion_image_label.setPixmap(QPixmap())
+		self.fusion_image_label.setText(message)
+
 	def resizeEvent(self, event):
 		super().resizeEvent(event)
 		QTimer.singleShot(0, self._update_previews)

@@ -236,8 +236,79 @@ def createBlendedFrame(configData:dict, index:int, sizeAlpha:float, blendAlpha:f
     blendedFrame = cv.addWeighted(intermediateFrame0, 1-blendAlpha, intermediateFrame1, blendAlpha, 0)
     return blendedFrame
 #-------------------------------------------------------------------------
+def calculateZoomArray(configData:dict)->float:
+    currentZoom = 1.0
+    imgZooms = [1.0]
+    videoDims = np.array(configData['video_data']['size'], dtype=np.int32)
+    for i in range(len(configData['images_data']) - 1):
+        img0 = configData['images_data'][i]['image']
+        frame0 = np.array(configData['images_data'][i]['frame'], dtype=np.float32)
+        nextPoints0 = np.array(configData['images_data'][i]['next_points'], dtype=np.float32)
+
+        img1 = configData['images_data'][i + 1]['image']
+        frame1 = np.array(configData['images_data'][i + 1]['frame'], dtype=np.float32)
+        prevPoints1 = np.array(configData['images_data'][i + 1]['prev_points'], dtype=np.float32)
+
+        convertedPoints0 = convertPointsToVideoDimensions(nextPoints0, frame0, videoDims)
+        convertedPoints1 = convertPointsToVideoDimensions(prevPoints1, frame1, videoDims)
+
+        pairRatio = pointsMeanSizeRatio(convertedPoints0, convertedPoints1)
+        currentZoom *= pairRatio
+        imgZooms.append(currentZoom)
+        print(f"DEBUG - Pair ratio for images {i} and {i+1}: {pairRatio}")
+        print(f"Zoom for image {i}:{currentZoom}")
+    imgZooms = np.array(imgZooms)
+    print("Image zooms:", imgZooms)
+    return imgZooms
+#-------------------------------------------------------------------------
+def calculateFramesFusionAndSizeAlpha(configData:dict)->float:
+    zoomArray = calculateZoomArray(configData)
+    logZoomArray = np.log(zoomArray)
+    totalFrames = int(configData['video_data']['FPS'] * configData['video_data']['duration'])
+    framesLogsZooms = np.linspace(0, logZoomArray[-1], num=totalFrames)
+    print("DEBUG - Frames logs zooms:", framesLogsZooms)
+    indexesStepsList = []
+    for frameLogZoom in framesLogsZooms:
+        if frameLogZoom <= logZoomArray[0]:
+            indexesStepsList.append((0, 0.0))
+            continue
+        #Find the index of the logZoomArray less or equal to frameLogZoom
+        firstIndex = np.searchsorted(logZoomArray, frameLogZoom, side='left') - 1
+        step = (frameLogZoom - logZoomArray[firstIndex]) / (logZoomArray[firstIndex + 1] - logZoomArray[firstIndex])
+        indexesStepsList.append((firstIndex, step))
+    return indexesStepsList
+#-------------------------------------------------------------------------
+def generateVideo(configData:dict, filename:str):
+    indexesSizeAlphasList = calculateFramesFusionAndSizeAlpha(configData)
+    videoDims = np.array(configData['video_data']['size'], dtype=np.int32)
+    print("DEBUG - Video dimensions:", videoDims)
+    videoFPS = int(configData['video_data']['FPS'])
+    interpolationMethod = configData['video_data'].get('interpolation_method', 'log')
+    videoWriter = cv.VideoWriter(filename, cv.VideoWriter_fourcc(*'mp4v'), videoFPS, tuple(videoDims))
+    if not videoWriter.isOpened():
+        print("ERROR - Failed to open video writer")
+        return
+    for firstIndex, sizeAlpha in indexesSizeAlphasList:
+        print(f"DEBUG - Frame first index: {firstIndex}, sizeAlpha: {sizeAlpha}")
+        blendAlphaRange = configData['images_data'][firstIndex].get('alpha_range', (0.0, 1.0))
+        blendAlpha = (sizeAlpha - blendAlphaRange[0]) / (blendAlphaRange[1] - blendAlphaRange[0])
+        blendAlpha = np.clip(blendAlpha, 0.0, 1.0)
+        blendedFrame = createBlendedFrame(configData, index=firstIndex, sizeAlpha=sizeAlpha, blendAlpha=blendAlpha, interpolationMethod=interpolationMethod)
+        videoWriter.write(blendedFrame)
+    videoWriter.release()
+
+#-------------------------------------------------------------------------
+
+
 
 if __name__ == "__main__": 
+    cfgFile = 'autosave.json'
+    cfgDict = loadConfig(cfgFile)
+    generateVideo(cfgDict, "output.mp4")
+    quit()
+
+
+
     cfgFile = 'prat.json'
     cfgDict = loadConfig(cfgFile)
     saveConfig("out.json", cfgDict)

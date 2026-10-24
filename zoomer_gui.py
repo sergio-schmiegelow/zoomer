@@ -248,13 +248,20 @@ class MainApp(QMainWindow):
 		if not 0 <= pair_index < len(self.image_entries) - 1:
 			self.image_files_and_preview_area.preview_area.set_fusion_frame(None)
 			return
-		frame = createBlendedFrame(
-			self.configData,
-			pair_index,
-			size_alpha,
-			blend_alpha,
-			interpolationMethod=self.video_settings.get("interpolation_method", "log"),
-		)
+		try:
+			frame = createBlendedFrame(
+				self.configData,
+				pair_index,
+				size_alpha,
+				blend_alpha,
+				interpolationMethod=self.video_settings.get("interpolation_method", "log"),
+			)
+		except Exception as error:
+			print(error)
+			self.image_files_and_preview_area.preview_area.set_fusion_error(
+				"Invalid fusion parameters"
+			)
+			return
 		self.image_files_and_preview_area.preview_area.set_fusion_frame(frame)
 
 	def _alpha_range_edited(self, pair_index, alpha_range):
