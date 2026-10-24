@@ -682,6 +682,11 @@ class VideoSettingsDialog(QDialog):
 		self.duration_spin.setSuffix(" s")
 		layout.addRow("Duration", self.duration_spin)
 
+		self.interpolation_method_combo = QComboBox()
+		self.interpolation_method_combo.addItem("Logarithmic", "log")
+		self.interpolation_method_combo.addItem("Linear", "linear")
+		layout.addRow("Interpolation", self.interpolation_method_combo)
+
 		buttons = QDialogButtonBox(
 			QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
 		)
@@ -720,6 +725,9 @@ class VideoSettingsDialog(QDialog):
 			self.frame_rate_combo.setCurrentIndex(self.frame_rate_combo.count() - 1)
 		self.custom_frame_rate.setValue(frame_rate)
 		self.duration_spin.setValue(video_data.get("duration", 10))
+		interpolation_method = video_data.get("interpolation_method", "log")
+		method_index = self.interpolation_method_combo.findData(interpolation_method)
+		self.interpolation_method_combo.setCurrentIndex(method_index if method_index >= 0 else 0)
 
 	def _select_video_size(self, index):
 		custom = self.video_size_combo.itemData(index) is None
@@ -744,6 +752,7 @@ class VideoSettingsDialog(QDialog):
 			"size": selected_size or (self.width_spin.value(), self.height_spin.value()),
 			"FPS": frame_rate if frame_rate is not None else self.custom_frame_rate.value(),
 			"duration": self.duration_spin.value(),
+			"interpolation_method": self.interpolation_method_combo.currentData(),
 		}
 
 

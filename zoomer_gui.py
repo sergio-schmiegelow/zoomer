@@ -253,7 +253,7 @@ class MainApp(QMainWindow):
 			pair_index,
 			size_alpha,
 			blend_alpha,
-			interpolationMethod="linear",
+			interpolationMethod=self.video_settings.get("interpolation_method", "log"),
 		)
 		self.image_files_and_preview_area.preview_area.set_fusion_frame(frame)
 
