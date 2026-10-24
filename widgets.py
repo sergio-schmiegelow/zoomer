@@ -494,8 +494,17 @@ class imageFusionEditor(QWidget):
 		if len(self.image_entries) < 2:
 			return
 		fusion_step = self.fusion_step_slider.value() / 100
-		lower, upper = self.alpha_range_slider.values
-		blend_alpha = (lower + fusion_step * (upper - lower)) / 100
+		minimum_alpha, maximum_alpha = (
+			value / 100 for value in self.alpha_range_slider.values
+		)
+		if fusion_step < minimum_alpha:
+			blend_alpha = 0.0
+		elif fusion_step > maximum_alpha:
+			blend_alpha = 1.0
+		elif maximum_alpha == minimum_alpha:
+			blend_alpha = 0.0
+		else:
+			blend_alpha = (fusion_step - minimum_alpha) / (maximum_alpha - minimum_alpha)
 		self.fusionPreviewRequested.emit(self.pair_index, fusion_step, blend_alpha)
 
 	def refresh_fusion_preview(self):
