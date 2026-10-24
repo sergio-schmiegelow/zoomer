@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import cv2 as cv
-from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtSignal
+from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QImage, QImageReader, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
 	QAbstractItemView,
@@ -221,19 +221,45 @@ class _ImageFileListWidget(QListWidget):
 		)
 
 
+class _FitImageLabel(QLabel):
+	def __init__(self, empty_text, parent=None):
+		super().__init__(empty_text, parent)
+		self._source_pixmap = QPixmap()
+		self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+		self.setMinimumSize(160, 120)
+		self.setStyleSheet("background-color: #202020; color: white;")
+
+	def set_source_pixmap(self, pixmap):
+		self._source_pixmap = pixmap
+		if pixmap.isNull():
+			self.setPixmap(QPixmap())
+		else:
+			self.setText("")
+			self._fit_image()
+
+	def resizeEvent(self, event):
+		super().resizeEvent(event)
+		self._fit_image()
+
+	def _fit_image(self):
+		if not self._source_pixmap.isNull():
+			self.setPixmap(self._source_pixmap.scaled(
+				self.contentsRect().size(),
+				Qt.AspectRatioMode.KeepAspectRatio,
+				Qt.TransformationMode.SmoothTransformation,
+			))
+
+
 class previewArea(QWidget):
 	def __init__(self, parent=None):
 		super().__init__(parent)
 		self.setObjectName("previewArea")
 		self.tabs = QTabWidget(self)
-		self.input_image_label = QLabel("Select an image to preview")
-		self.fusion_image_label = QLabel("Fusion preview unavailable")
-		for label in (self.input_image_label, self.fusion_image_label):
-			label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-			label.setMinimumSize(160, 120)
-			label.setStyleSheet("background-color: #202020; color: white;")
+		self.input_image_label = _FitImageLabel("Select an image to preview")
+		self.fusion_image_label = _FitImageLabel("Fusion preview unavailable")
 		self.tabs.addTab(self.input_image_label, "Input image")
 		self.tabs.addTab(self.fusion_image_label, "Fusion preview")
+		self.tabs.currentChanged.connect(self._update_previews)
 		layout = QVBoxLayout(self)
 		layout.setContentsMargins(0, 0, 0, 0)
 		layout.addWidget(self.tabs)
@@ -249,7 +275,7 @@ class previewArea(QWidget):
 			)
 		else:
 			self._input_pixmap = QPixmap.fromImage(image)
-			self.input_image_label.setText("")
+		self.input_image_label.set_source_pixmap(self._input_pixmap)
 		self._update_previews()
 
 	def set_fusion_frame(self, image):
@@ -259,21 +285,26 @@ class previewArea(QWidget):
 		else:
 			qt_image = _array_to_qimage(image)
 			self._fusion_pixmap = QPixmap.fromImage(qt_image)
-			self.fusion_image_label.setText("")
+		self.fusion_image_label.set_source_pixmap(self._fusion_pixmap)
 		self._update_previews()
 
 	def resizeEvent(self, event):
 		super().resizeEvent(event)
-		self._update_previews()
+		QTimer.singleShot(0, self._update_previews)
 
-	def _update_previews(self):
-		for label, pixmap in (
+	def _update_previews(self, _index=None):
+		_ = _index
+		current_label = self.tabs.currentWidget()
+		if current_label is None:
+			return
+		page_size = current_label.contentsRect().size()
+		for label, source_pixmap in (
 			(self.input_image_label, self._input_pixmap),
 			(self.fusion_image_label, self._fusion_pixmap),
 		):
-			if not pixmap.isNull():
-				label.setPixmap(pixmap.scaled(
-					label.contentsRect().size(),
+			if not source_pixmap.isNull():
+				label.setPixmap(source_pixmap.scaled(
+					page_size,
 					Qt.AspectRatioMode.KeepAspectRatio,
 					Qt.TransformationMode.SmoothTransformation,
 				))
