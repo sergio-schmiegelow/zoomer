@@ -42,6 +42,12 @@ class MainApp(QMainWindow):
 		export_action = self.menuBar().addAction("&Export")
 		export_action.triggered.connect(self.select_export_filename)
 
+		options_menu = self.menuBar().addMenu("&Options")
+		self.frame_crosshair_action = options_menu.addAction("Frame crosshair")
+		self.frame_crosshair_action.setCheckable(True)
+		self.frame_crosshair_action.setChecked(True)
+		self.frame_crosshair_action.toggled.connect(self._set_frame_crosshair_enabled)
+
 	def save_project(self, _checked=False):
 		saveConfig(self.project_filename, self.configData)
 
@@ -90,6 +96,9 @@ class MainApp(QMainWindow):
 		self.workspace_splitter.addWidget(self.image_files_and_preview_area)
 		self.image_fusion_edition_area = imageFusionEditionArea(self)
 		self.image_fusion_editor = self.image_fusion_edition_area.editor
+		self.image_fusion_editor.set_frame_crosshair_enabled(
+			self.frame_crosshair_action.isChecked()
+		)
 		self.image_fusion_editor.pairRequested.connect(self._navigate_pair)
 		self.image_fusion_editor.imageEdited.connect(self._image_edited)
 		self.image_fusion_editor.fusionPreviewRequested.connect(self._update_fusion_preview)
@@ -105,6 +114,10 @@ class MainApp(QMainWindow):
 		paths = [self._path_for_entry(entry) for entry in image_entries]
 		organizer.set_image_files(paths)
 		self._show_pair(max(0, organizer.image_list.currentRow()))
+
+	def _set_frame_crosshair_enabled(self, enabled):
+		if hasattr(self, "image_fusion_editor"):
+			self.image_fusion_editor.set_frame_crosshair_enabled(enabled)
 
 	@staticmethod
 	def _image_path(image_entry):

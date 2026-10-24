@@ -474,6 +474,7 @@ class imageFusionEditor(QWidget):
 		self.pair_index = 0
 		self.image_entries = []
 		self.image_paths = []
+		self.frame_crosshair_enabled = True
 		self.layout = QVBoxLayout(self)
 		self.navigation = QHBoxLayout()
 		self.previous_button = QPushButton("Previous pair")
@@ -605,6 +606,7 @@ class imageFusionEditor(QWidget):
 				frame_width / frame_height, points, column
 			)
 			editor.setObjectName("imageMarkersEditor")
+			editor.frame_crosshair_enabled = self.frame_crosshair_enabled
 			editor.frameChanged.connect(
 				lambda value, index=entry_index: self.imageEdited.emit(index, "frame", value)
 			)
@@ -619,6 +621,13 @@ class imageFusionEditor(QWidget):
 		self.pair_splitter.setStretchFactor(0, 1)
 		self.pair_splitter.setStretchFactor(1, 1)
 		self._emit_fusion_preview_request()
+
+	def set_frame_crosshair_enabled(self, enabled):
+		self.frame_crosshair_enabled = bool(enabled)
+		for index in range(self.pair_splitter.count()):
+			column = self.pair_splitter.widget(index)
+			column.editor.frame_crosshair_enabled = self.frame_crosshair_enabled
+			column.editor.update()
 
 	def _previous_pair(self):
 		if self.pair_index > 0:
@@ -792,6 +801,7 @@ class imageMarkersEditor(QWidget):
 		self._drag_mode = None
 		self._drag_point = None
 		self._last_mouse_position = QPointF()
+		self.frame_crosshair_enabled = True
 		self.zoom_all_button = QPushButton("Zoom all", self)
 		self.zoom_all_button.setFixedSize(96, 34)
 		self.zoom_all_button.clicked.connect(self.zoom_all)
@@ -873,6 +883,21 @@ class imageMarkersEditor(QWidget):
 		):
 			painter.setPen(QPen(frame_color, frame_width))
 			painter.drawRect(frame_rect)
+		if self.frame_crosshair_enabled:
+			center = self.image_to_widget(QPointF(
+				self.frame_x + self.frame_width / 2,
+				self.frame_y + self.frame_height / 2,
+			))
+			painter.setPen(QPen(QColor("black"), 7))
+			painter.drawLine(QPointF(center.x() - CROSS_SIZE, center.y()),
+				QPointF(center.x() + CROSS_SIZE, center.y()))
+			painter.drawLine(QPointF(center.x(), center.y() - CROSS_SIZE),
+				QPointF(center.x(), center.y() + CROSS_SIZE))
+			painter.setPen(QPen(QColor("white"), 3))
+			painter.drawLine(QPointF(center.x() - CROSS_SIZE, center.y()),
+				QPointF(center.x() + CROSS_SIZE, center.y()))
+			painter.drawLine(QPointF(center.x(), center.y() - CROSS_SIZE),
+				QPointF(center.x(), center.y() + CROSS_SIZE))
 
 		point_colors = (QColor("red"), QColor("green"), QColor("blue"))
 		for point, color in zip(self.points, point_colors):
@@ -896,6 +921,13 @@ class imageMarkersEditor(QWidget):
 			QPointF(self.frame_x + self.frame_width, self.frame_y + self.frame_height)
 		)
 		tolerance = 9
+		if self.frame_crosshair_enabled:
+			center = self.image_to_widget(QPointF(
+				self.frame_x + self.frame_width / 2,
+				self.frame_y + self.frame_height / 2,
+			))
+			if (position - center).manhattanLength() <= CROSS_SIZE:
+				return "center"
 		near_left = abs(position.x() - top_left.x()) <= tolerance
 		near_right = abs(position.x() - bottom_right.x()) <= tolerance
 		near_top = abs(position.y() - top_left.y()) <= tolerance
@@ -922,6 +954,9 @@ class imageMarkersEditor(QWidget):
 
 	def _set_hover_cursor(self, position):
 		handle = self._frame_handle_at(position)
+		if handle == "center":
+			self.setCursor(Qt.CursorShape.OpenHandCursor)
+			return
 		if handle in ("top-left", "bottom-right"):
 			self.setCursor(Qt.CursorShape.SizeFDiagCursor)
 			return
@@ -954,7 +989,9 @@ class imageMarkersEditor(QWidget):
 		position = event.position()
 		self._last_mouse_position = position
 		handle = self._frame_handle_at(position)
-		if handle in ("top-left", "top-right", "bottom-left", "bottom-right"):
+		if handle == "center":
+			self._drag_mode = "frame-move"
+		elif handle in ("top-left", "top-right", "bottom-left", "bottom-right"):
 			self._drag_mode = "frame-resize"
 			self._drag_corner = handle
 		else:
