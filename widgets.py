@@ -11,12 +11,12 @@ from PyQt6.QtWidgets import (
 	QDoubleSpinBox,
 	QFileDialog,
 	QFormLayout,
+	QGridLayout,
 	QHBoxLayout,
 	QLabel,
 	QListWidget,
 	QListWidgetItem,
 	QPushButton,
-	QSlider,
 	QSplitter,
 	QSpinBox,
 	QTabWidget,
@@ -279,6 +279,73 @@ class previewArea(QWidget):
 				))
 
 
+class FusionStepSlider(QWidget):
+	valueChanged = pyqtSignal(int)
+
+	def __init__(self, parent=None):
+		super().__init__(parent)
+		self._value = 50
+		self._minimum = 0
+		self._maximum = 100
+		self.setMinimumHeight(30)
+		self.setMouseTracking(True)
+
+	def minimum(self):
+		return self._minimum
+
+	def maximum(self):
+		return self._maximum
+
+	def value(self):
+		return self._value
+
+	def setRange(self, minimum, maximum):
+		self._minimum, self._maximum = minimum, maximum
+		self.setValue(self._value)
+
+	def setValue(self, value):
+		value = max(self._minimum, min(self._maximum, int(value)))
+		if value != self._value:
+			self._value = value
+			self.valueChanged.emit(value)
+		self.update()
+
+	def _position_for_value(self, value):
+		left, right = 7, max(8, self.width() - 8)
+		return left + (right - left) * (value - self._minimum) / (self._maximum - self._minimum)
+
+	def _value_for_position(self, x):
+		left, right = 7, max(8, self.width() - 8)
+		fraction = (x - left) / (right - left)
+		return max(self._minimum, min(self._maximum, round(
+			self._minimum + fraction * (self._maximum - self._minimum)
+		)))
+
+	def paintEvent(self, event):
+		painter = QPainter(self)
+		painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+		center_y = self.height() / 2
+		left = self._position_for_value(self._minimum)
+		right = self._position_for_value(self._maximum)
+		handle_x = self._position_for_value(self._value)
+		painter.setPen(QPen(QColor("#707070"), 4))
+		painter.drawLine(QPointF(left, center_y), QPointF(right, center_y))
+		painter.setPen(QPen(QColor("#168a82"), 4))
+		painter.drawLine(QPointF(left, center_y), QPointF(handle_x, center_y))
+		painter.setPen(QPen(QColor("#202020"), 1))
+		painter.setBrush(QColor("#f2f2ed"))
+		painter.drawEllipse(QPointF(handle_x, center_y), 7, 7)
+		event.accept()
+
+	def mousePressEvent(self, event):
+		if event.button() == Qt.MouseButton.LeftButton:
+			self.setValue(self._value_for_position(event.position().x()))
+
+	def mouseMoveEvent(self, event):
+		if event.buttons() & Qt.MouseButton.LeftButton:
+			self.setValue(self._value_for_position(event.position().x()))
+
+
 class AlphaRangeSlider(QWidget):
 	rangeChanged = pyqtSignal(int, int)
 
@@ -301,11 +368,11 @@ class AlphaRangeSlider(QWidget):
 		self.update()
 
 	def _position_for_value(self, value):
-		left, right = 10, max(11, self.width() - 10)
+		left, right = 7, max(8, self.width() - 8)
 		return left + (right - left) * value / 100
 
 	def _value_for_position(self, x):
-		left, right = 10, max(11, self.width() - 10)
+		left, right = 7, max(8, self.width() - 8)
 		return max(0, min(100, round((x - left) * 100 / (right - left))))
 
 	def paintEvent(self, event):
@@ -320,12 +387,10 @@ class AlphaRangeSlider(QWidget):
 		painter.drawLine(QPointF(left, center_y), QPointF(right, center_y))
 		painter.setPen(QPen(QColor("#168a82"), 4))
 		painter.drawLine(QPointF(lower_x, center_y), QPointF(upper_x, center_y))
-		for value, x in ((self._lower, lower_x), (self._upper, upper_x)):
+		for x in (lower_x, upper_x):
 			painter.setPen(QPen(QColor("#202020"), 1))
 			painter.setBrush(QColor("#f2f2ed"))
 			painter.drawEllipse(QPointF(x, center_y), 7, 7)
-			painter.setPen(QColor("#202020"))
-			painter.drawText(QRectF(x - 20, 0, 40, 14), Qt.AlignmentFlag.AlignCenter, str(value))
 		event.accept()
 
 	def mousePressEvent(self, event):
@@ -385,22 +450,31 @@ class imageFusionEditor(QWidget):
 		self.pair_splitter = QSplitter(Qt.Orientation.Horizontal, self)
 		self.layout.addWidget(self.pair_splitter, 1)
 		self.fusion_controls = QWidget(self)
-		controls_layout = QFormLayout(self.fusion_controls)
-		fusion_step_row = QHBoxLayout()
-		self.fusion_step_slider = QSlider(Qt.Orientation.Horizontal)
+		controls_layout = QGridLayout(self.fusion_controls)
+		controls_layout.setColumnMinimumWidth(0, 110)
+		controls_layout.setColumnStretch(1, 1)
+		controls_layout.setColumnMinimumWidth(2, 76)
+		fusion_step_label = QLabel("Fusion step")
+		fusion_step_label.setFixedWidth(110)
+		self.fusion_step_slider = FusionStepSlider(self.fusion_controls)
 		self.fusion_step_slider.setRange(0, 100)
 		self.fusion_step_slider.setValue(50)
 		self.fusion_step_value = QLabel("50%")
-		fusion_step_row.addWidget(self.fusion_step_slider, 1)
-		fusion_step_row.addWidget(self.fusion_step_value)
-		controls_layout.addRow("Fusion step", fusion_step_row)
-		alpha_range_row = QHBoxLayout()
+		self.fusion_step_value.setFixedWidth(76)
+		self.fusion_step_value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+		controls_layout.addWidget(fusion_step_label, 0, 0)
+		controls_layout.addWidget(self.fusion_step_slider, 0, 1)
+		controls_layout.addWidget(self.fusion_step_value, 0, 2)
+		alpha_range_label = QLabel("Alpha range")
+		alpha_range_label.setFixedWidth(110)
 		self.alpha_range_slider = AlphaRangeSlider(self.fusion_controls)
 		self.alpha_range_slider.setValues(0, 100)
 		self.alpha_range_value = QLabel("0% - 100%")
-		alpha_range_row.addWidget(self.alpha_range_slider, 1)
-		alpha_range_row.addWidget(self.alpha_range_value)
-		controls_layout.addRow("Alpha range", alpha_range_row)
+		self.alpha_range_value.setFixedWidth(76)
+		self.alpha_range_value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+		controls_layout.addWidget(alpha_range_label, 1, 0)
+		controls_layout.addWidget(self.alpha_range_slider, 1, 1)
+		controls_layout.addWidget(self.alpha_range_value, 1, 2)
 		self.layout.addWidget(self.fusion_controls)
 		self.previous_button.clicked.connect(self._previous_pair)
 		self.next_button.clicked.connect(self._next_pair)
