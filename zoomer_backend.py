@@ -160,8 +160,12 @@ def pointsMeanSizeRatio(points0:np.ndarray, points1:np.ndarray)->float:
     meanSize1 = pointsMeanSize(points1)
     return meanSize1 / meanSize0 if meanSize0 != 0 else float('inf')
 #-------------------------------------------------------------------------
+def interpolatePointsLinear(points0:np.ndarray, points1:np.ndarray, alpha:float)->np.ndarray:
+    # Interpolate between two sets of points linearly based on the alpha value.
+    return (1 - alpha) * points0 + alpha * points1
+#-------------------------------------------------------------------------
 def interpolatePointsGP(points0:np.ndarray, points1:np.ndarray, alpha:float)->np.ndarray:
-    # Interpolate between two sets of points based in geometric progression on the alpha value.
+    # Interpolate between two sets of points based on the specified interpolation method.
     #Calculate the relative size of the two sets of points
     sizeRatio = pointsMeanSizeRatio(points0, points1)
     logSizeRatio = np.log(sizeRatio)
@@ -171,16 +175,25 @@ def interpolatePointsGP(points0:np.ndarray, points1:np.ndarray, alpha:float)->np
     #print(f'DEBUG - sizeRatio: {sizeRatio}, alpha: {alpha}, linearSizeRatio: {linearSizeRatio}, pgAlpha: {pgAlpha}')
     return (1 - pgAlpha) * points0 + pgAlpha * points1
 #-------------------------------------------------------------------------
+def interpolatePoints(points0:np.ndarray, points1:np.ndarray, alpha:float, interpolationMethod:str='gp')->np.ndarray:
+    if interpolationMethod == 'linear':
+        return interpolatePointsLinear(points0, points1, alpha)
+    elif interpolationMethod == 'gp':
+        return interpolatePointsGP(points0, points1, alpha)
+    else:
+        raise ValueError(f"Unknown interpolation method: {interpolationMethod}")
+#-------------------------------------------------------------------------
 def createIntermediateFrame(videoSize:np.ndarray, 
                             img0:np.ndarray, points0:np.ndarray, frame0:np.ndarray,
                                              points1:np.ndarray, frame1:np.ndarray,
-                            sizeAlpha:float, checkFill:bool=False)->np.ndarray:
+                            sizeAlpha:float, checkFill:bool=False,
+                            interpolationMethod:str='gp')->np.ndarray:
     #Convert the points0 to frame0 coordinates
     videoTransformedPoints0 = convertPointsToVideoDimensions(points0, frame0, videoSize)
     #Convert the points1 to frame1 coordinates
     videoTransformedPoints1 = convertPointsToVideoDimensions(points1, frame1, videoSize)
     #Interpolate the points between the two frames
-    interpolatedPoints = interpolatePointsGP(videoTransformedPoints0, videoTransformedPoints1, sizeAlpha)
+    interpolatedPoints = interpolatePoints(videoTransformedPoints0, videoTransformedPoints1, sizeAlpha, interpolationMethod)
     #Create an affine transformer for the first image
     imgTransformer = affineTransformerClass(points0, interpolatedPoints)
     if checkFill:
