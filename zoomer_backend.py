@@ -219,7 +219,7 @@ def getBlendAlphaRange(videoSize:np.ndarray,
                 maxSizeAlphaForBlending = testSizeAlpha
     return minSizeAlphaForBlending, maxSizeAlphaForBlending
 #-------------------------------------------------------------------------
-def createBlendedFrame(configData:dict, index:int, sizeAlpha:float, blendAlpha:float)->np.ndarray:
+def createBlendedFrame(configData:dict, index:int, sizeAlpha:float, blendAlpha:float, interpolationMethod:str='gp')->np.ndarray:
     videoSize = np.array(configData['video_data']['size'], dtype=np.int32)
     
     imgPrev =                 configData['images_data'][index]['image'].getCvImage()
@@ -230,8 +230,8 @@ def createBlendedFrame(configData:dict, index:int, sizeAlpha:float, blendAlpha:f
     frameNext  =     np.array(configData['images_data'][index + 1]['frame'], dtype=np.float32)
     nextPrevPoints = np.array(configData['images_data'][index + 1]['prev_points'], dtype=np.float32)
     
-    intermediateFrame0 = createIntermediateFrame(videoSize, imgPrev, prevNextPoints, framePrev, nextPrevPoints, frameNext, sizeAlpha)
-    intermediateFrame1 = createIntermediateFrame(videoSize, imgNext, nextPrevPoints, frameNext, prevNextPoints, framePrev, 1-sizeAlpha)
+    intermediateFrame0 = createIntermediateFrame(videoSize, imgPrev, prevNextPoints, framePrev, nextPrevPoints, frameNext, sizeAlpha,  interpolationMethod=interpolationMethod)
+    intermediateFrame1 = createIntermediateFrame(videoSize, imgNext, nextPrevPoints, frameNext, prevNextPoints, framePrev, 1-sizeAlpha, interpolationMethod=interpolationMethod )
     #Blend the two intermediate frames
     blendedFrame = cv.addWeighted(intermediateFrame0, 1-blendAlpha, intermediateFrame1, blendAlpha, 0)
     return blendedFrame

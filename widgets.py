@@ -16,8 +16,10 @@ from PyQt6.QtWidgets import (
 	QListWidget,
 	QListWidgetItem,
 	QPushButton,
+	QSlider,
 	QSplitter,
 	QSpinBox,
+	QTabWidget,
 	QVBoxLayout,
 	QWidget,
 )
@@ -60,6 +62,30 @@ def load_oriented_image(image_object):
 	return reader.read()
 
 
+
+
+def _array_to_qimage(cv_image):
+	if cv_image is None:
+		return QImage()
+	if cv_image.ndim == 2:
+		height, width = cv_image.shape
+		return QImage(
+			cv_image.data, width, height, cv_image.strides[0],
+			QImage.Format.Format_Grayscale8,
+		).copy()
+	if cv_image.shape[2] == 4:
+		rgba_image = cv.cvtColor(cv_image, cv.COLOR_BGRA2RGBA)
+		height, width = rgba_image.shape[:2]
+		return QImage(
+			rgba_image.data, width, height, rgba_image.strides[0],
+			QImage.Format.Format_RGBA8888,
+		).copy()
+	rgb_image = cv.cvtColor(cv_image, cv.COLOR_BGR2RGB)
+	height, width = rgb_image.shape[:2]
+	return QImage(
+		rgb_image.data, width, height, rgb_image.strides[0],
+		QImage.Format.Format_RGB888,
+	).copy()
 
 
 class imageFilesOrganizer(QWidget):
@@ -195,36 +221,131 @@ class _ImageFileListWidget(QListWidget):
 		)
 
 
-class previewArea(QLabel):
+class previewArea(QWidget):
 	def __init__(self, parent=None):
-		super().__init__("Select an image to preview", parent)
+		super().__init__(parent)
 		self.setObjectName("previewArea")
-		self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-		self.setMinimumSize(160, 120)
-		self.setStyleSheet("background-color: #202020; color: white;")
-		self._pixmap = QPixmap()
+		self.tabs = QTabWidget(self)
+		self.input_image_label = QLabel("Select an image to preview")
+		self.fusion_image_label = QLabel("Fusion preview unavailable")
+		for label in (self.input_image_label, self.fusion_image_label):
+			label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+			label.setMinimumSize(160, 120)
+			label.setStyleSheet("background-color: #202020; color: white;")
+		self.tabs.addTab(self.input_image_label, "Input image")
+		self.tabs.addTab(self.fusion_image_label, "Fusion preview")
+		layout = QVBoxLayout(self)
+		layout.setContentsMargins(0, 0, 0, 0)
+		layout.addWidget(self.tabs)
+		self._input_pixmap = QPixmap()
+		self._fusion_pixmap = QPixmap()
 
 	def set_image(self, image_object):
 		image = load_oriented_image(image_object) if image_object else QImage()
 		if image.isNull():
-			self._pixmap = QPixmap()
-			self.setText("Select an image to preview" if not image_object else "Unable to load image")
+			self._input_pixmap = QPixmap()
+			self.input_image_label.setText(
+				"Select an image to preview" if not image_object else "Unable to load image"
+			)
 		else:
-			self._pixmap = QPixmap.fromImage(image)
-			self.setText("")
-		self._update_preview()
+			self._input_pixmap = QPixmap.fromImage(image)
+			self.input_image_label.setText("")
+		self._update_previews()
+
+	def set_fusion_frame(self, image):
+		if image is None or not hasattr(image, "shape"):
+			self._fusion_pixmap = QPixmap()
+			self.fusion_image_label.setText("Fusion preview unavailable")
+		else:
+			qt_image = _array_to_qimage(image)
+			self._fusion_pixmap = QPixmap.fromImage(qt_image)
+			self.fusion_image_label.setText("")
+		self._update_previews()
 
 	def resizeEvent(self, event):
 		super().resizeEvent(event)
-		self._update_preview()
+		self._update_previews()
 
-	def _update_preview(self):
-		if not self._pixmap.isNull():
-			self.setPixmap(self._pixmap.scaled(
-				self.contentsRect().size(),
-				Qt.AspectRatioMode.KeepAspectRatio,
-				Qt.TransformationMode.SmoothTransformation,
-			))
+	def _update_previews(self):
+		for label, pixmap in (
+			(self.input_image_label, self._input_pixmap),
+			(self.fusion_image_label, self._fusion_pixmap),
+		):
+			if not pixmap.isNull():
+				label.setPixmap(pixmap.scaled(
+					label.contentsRect().size(),
+					Qt.AspectRatioMode.KeepAspectRatio,
+					Qt.TransformationMode.SmoothTransformation,
+				))
+
+
+class AlphaRangeSlider(QWidget):
+	rangeChanged = pyqtSignal(int, int)
+
+	def __init__(self, parent=None):
+		super().__init__(parent)
+		self._lower = 0
+		self._upper = 100
+		self._active_handle = "lower"
+		self.setMinimumHeight(30)
+		self.setMouseTracking(True)
+
+	@property
+	def values(self):
+		return self._lower, self._upper
+
+	def setValues(self, lower, upper):
+		lower = max(0, min(100, int(lower)))
+		upper = max(0, min(100, int(upper)))
+		self._lower, self._upper = sorted((lower, upper))
+		self.update()
+
+	def _position_for_value(self, value):
+		left, right = 10, max(11, self.width() - 10)
+		return left + (right - left) * value / 100
+
+	def _value_for_position(self, x):
+		left, right = 10, max(11, self.width() - 10)
+		return max(0, min(100, round((x - left) * 100 / (right - left))))
+
+	def paintEvent(self, event):
+		painter = QPainter(self)
+		painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+		center_y = self.height() / 2
+		left = self._position_for_value(0)
+		right = self._position_for_value(100)
+		lower_x = self._position_for_value(self._lower)
+		upper_x = self._position_for_value(self._upper)
+		painter.setPen(QPen(QColor("#707070"), 4))
+		painter.drawLine(QPointF(left, center_y), QPointF(right, center_y))
+		painter.setPen(QPen(QColor("#168a82"), 4))
+		painter.drawLine(QPointF(lower_x, center_y), QPointF(upper_x, center_y))
+		for value, x in ((self._lower, lower_x), (self._upper, upper_x)):
+			painter.setPen(QPen(QColor("#202020"), 1))
+			painter.setBrush(QColor("#f2f2ed"))
+			painter.drawEllipse(QPointF(x, center_y), 7, 7)
+			painter.setPen(QColor("#202020"))
+			painter.drawText(QRectF(x - 20, 0, 40, 14), Qt.AlignmentFlag.AlignCenter, str(value))
+		event.accept()
+
+	def mousePressEvent(self, event):
+		value = self._value_for_position(event.position().x())
+		lower_distance = abs(value - self._lower)
+		upper_distance = abs(value - self._upper)
+		self._active_handle = "lower" if lower_distance <= upper_distance else "upper"
+		self._set_active_value(value)
+
+	def mouseMoveEvent(self, event):
+		if event.buttons() & Qt.MouseButton.LeftButton:
+			self._set_active_value(self._value_for_position(event.position().x()))
+
+	def _set_active_value(self, value):
+		if self._active_handle == "lower":
+			self._lower = min(value, self._upper)
+		else:
+			self._upper = max(value, self._lower)
+		self.update()
+		self.rangeChanged.emit(self._lower, self._upper)
 
 
 class imageFilesAndPreviewArea(QSplitter):
@@ -242,6 +363,7 @@ class imageFilesAndPreviewArea(QSplitter):
 class imageFusionEditor(QWidget):
 	imageEdited = pyqtSignal(int, str, object)
 	pairRequested = pyqtSignal(int)
+	fusionPreviewRequested = pyqtSignal(int, float, float)
 
 	def __init__(self, parent=None):
 		super().__init__(parent)
@@ -262,9 +384,48 @@ class imageFusionEditor(QWidget):
 		self.layout.addLayout(self.navigation)
 		self.pair_splitter = QSplitter(Qt.Orientation.Horizontal, self)
 		self.layout.addWidget(self.pair_splitter, 1)
+		self.fusion_controls = QWidget(self)
+		controls_layout = QFormLayout(self.fusion_controls)
+		fusion_step_row = QHBoxLayout()
+		self.fusion_step_slider = QSlider(Qt.Orientation.Horizontal)
+		self.fusion_step_slider.setRange(0, 100)
+		self.fusion_step_slider.setValue(50)
+		self.fusion_step_value = QLabel("50%")
+		fusion_step_row.addWidget(self.fusion_step_slider, 1)
+		fusion_step_row.addWidget(self.fusion_step_value)
+		controls_layout.addRow("Fusion step", fusion_step_row)
+		alpha_range_row = QHBoxLayout()
+		self.alpha_range_slider = AlphaRangeSlider(self.fusion_controls)
+		self.alpha_range_slider.setValues(0, 100)
+		self.alpha_range_value = QLabel("0% - 100%")
+		alpha_range_row.addWidget(self.alpha_range_slider, 1)
+		alpha_range_row.addWidget(self.alpha_range_value)
+		controls_layout.addRow("Alpha range", alpha_range_row)
+		self.layout.addWidget(self.fusion_controls)
 		self.previous_button.clicked.connect(self._previous_pair)
 		self.next_button.clicked.connect(self._next_pair)
+		self.fusion_step_slider.valueChanged.connect(self._fusion_step_changed)
+		self.alpha_range_slider.rangeChanged.connect(self._alpha_range_changed)
 		self.set_pair([], [], 0)
+
+	def _fusion_step_changed(self, value):
+		self.fusion_step_value.setText(f"{value}%")
+		self._emit_fusion_preview_request()
+
+	def _alpha_range_changed(self, lower, upper):
+		self.alpha_range_value.setText(f"{lower}% - {upper}%")
+		self._emit_fusion_preview_request()
+
+	def _emit_fusion_preview_request(self):
+		if len(self.image_entries) < 2:
+			return
+		fusion_step = self.fusion_step_slider.value() / 100
+		lower, upper = self.alpha_range_slider.values
+		blend_alpha = (lower + fusion_step * (upper - lower)) / 100
+		self.fusionPreviewRequested.emit(self.pair_index, fusion_step, blend_alpha)
+
+	def refresh_fusion_preview(self):
+		self._emit_fusion_preview_request()
 
 	def set_pair(self, image_entries, image_paths, pair_index):
 		self.image_entries = image_entries
@@ -280,9 +441,13 @@ class imageFusionEditor(QWidget):
 			self.pair_label.setText("Add at least two images to edit a pair")
 			self.previous_button.setEnabled(False)
 			self.next_button.setEnabled(False)
+			self.fusion_step_slider.setEnabled(False)
+			self.alpha_range_slider.setEnabled(False)
 			return
 
 		self.pair_index = max(0, min(pair_index, pair_count - 1))
+		self.fusion_step_slider.setEnabled(True)
+		self.alpha_range_slider.setEnabled(True)
 		self.pair_label.setText(f"Pair {self.pair_index + 1} / {pair_count}")
 		self.previous_button.setEnabled(self.pair_index > 0)
 		self.next_button.setEnabled(self.pair_index < pair_count - 1)
@@ -323,6 +488,7 @@ class imageFusionEditor(QWidget):
 			self.pair_splitter.addWidget(column)
 		self.pair_splitter.setStretchFactor(0, 1)
 		self.pair_splitter.setStretchFactor(1, 1)
+		self._emit_fusion_preview_request()
 
 	def _previous_pair(self):
 		if self.pair_index > 0:

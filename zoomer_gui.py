@@ -3,7 +3,7 @@ import math
 import random
 from pathlib import Path
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QApplication, QFileDialog, QMainWindow, QSplitter
 
 from widgets import (
@@ -11,7 +11,7 @@ from widgets import (
 	imageFilesAndPreviewArea,
 	imageFusionEditionArea,
 )
-from zoomer_backend import imageClass, loadConfig, saveConfig
+from zoomer_backend import imageClass, loadConfig, saveConfig, createBlendedFrame
 
 
 class MainApp(QMainWindow):
@@ -92,6 +92,13 @@ class MainApp(QMainWindow):
 		self.image_fusion_editor = self.image_fusion_edition_area.editor
 		self.image_fusion_editor.pairRequested.connect(self._navigate_pair)
 		self.image_fusion_editor.imageEdited.connect(self._image_edited)
+		self.image_fusion_editor.fusionPreviewRequested.connect(self._update_fusion_preview)
+		self._fusion_preview_timer = QTimer(self)
+		self._fusion_preview_timer.setSingleShot(True)
+		self._fusion_preview_timer.setInterval(75)
+		self._fusion_preview_timer.timeout.connect(
+			self.image_fusion_editor.refresh_fusion_preview
+		)
 		self.workspace_splitter.addWidget(self.image_fusion_edition_area)
 		self.setCentralWidget(self.workspace_splitter)
 		paths = [self._path_for_entry(entry) for entry in image_entries]
@@ -236,6 +243,19 @@ class MainApp(QMainWindow):
 		else:
 			organizer.image_list.setCurrentRow(pair_index)
 
+	def _update_fusion_preview(self, pair_index, size_alpha, blend_alpha):
+		if not 0 <= pair_index < len(self.image_entries) - 1:
+			self.image_files_and_preview_area.preview_area.set_fusion_frame(None)
+			return
+		frame = createBlendedFrame(
+			self.configData,
+			pair_index,
+			size_alpha,
+			blend_alpha,
+			interpolationMethod="linear",
+		)
+		self.image_files_and_preview_area.preview_area.set_fusion_frame(frame)
+
 	def _image_edited(self, image_index, field, value):
 		if image_index >= len(self.image_entries):
 			return
@@ -253,6 +273,7 @@ class MainApp(QMainWindow):
 		else:
 			entry[field] = [[point[0], point[1]] for point in value]
 		self.save_autosave()
+		self._fusion_preview_timer.start()
 
 
 def main() -> int:
