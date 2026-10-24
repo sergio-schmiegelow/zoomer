@@ -206,13 +206,19 @@ def getBlendAlphaRange(videoSize:np.ndarray,
                 maxSizeAlphaForBlending = testSizeAlpha
     return minSizeAlphaForBlending, maxSizeAlphaForBlending
 #-------------------------------------------------------------------------
-def createBlendedFrame(videoSize:np.ndarray, 
-                       img0:np.ndarray, points0:np.ndarray, frame0:np.ndarray,
-                       img1:np.ndarray, points1:np.ndarray, frame1:np.ndarray,
-                       sizeAlpha:float, blendAlpha:float)->np.ndarray:
-    #Create the intermediate frames for both images
-    intermediateFrame0 = createIntermediateFrame(videoSize, img0, points0, frame0, points1, frame1, sizeAlpha)
-    intermediateFrame1 = createIntermediateFrame(videoSize, img1, points1, frame1, points0, frame0, 1-sizeAlpha)
+def createBlendedFrame(configData:dict, index:int, sizeAlpha:float, blendAlpha:float)->np.ndarray:
+    videoSize = np.array(configData['video_data']['size'], dtype=np.int32)
+    
+    imgPrev =                 configData['images_data'][index]['image'].getCvImage()
+    framePrev  =     np.array(configData['images_data'][index]['frame'], dtype=np.float32)
+    prevNextPoints = np.array(configData['images_data'][index]['next_points'], dtype=np.float32)
+
+    imgNext =                 configData['images_data'][index + 1]['image'].getCvImage()
+    frameNext  =     np.array(configData['images_data'][index + 1]['frame'], dtype=np.float32)
+    nextPrevPoints = np.array(configData['images_data'][index + 1]['prev_points'], dtype=np.float32)
+    
+    intermediateFrame0 = createIntermediateFrame(videoSize, imgPrev, prevNextPoints, framePrev, nextPrevPoints, frameNext, sizeAlpha)
+    intermediateFrame1 = createIntermediateFrame(videoSize, imgNext, nextPrevPoints, frameNext, prevNextPoints, framePrev, 1-sizeAlpha)
     #Blend the two intermediate frames
     blendedFrame = cv.addWeighted(intermediateFrame0, 1-blendAlpha, intermediateFrame1, blendAlpha, 0)
     return blendedFrame
@@ -241,7 +247,8 @@ if __name__ == "__main__":
         blendAlpha = (sizeAlpha - minBlendAlpha) / (maxBlendAlpha - minBlendAlpha) 
         blendAlpha = np.clip(blendAlpha, 0.0, 1.0)
         print(f"DEBUG - sizeAlpha = {sizeAlpha}, blendAlpha = {blendAlpha}")
-        blendedFrame = createBlendedFrame(videoDims, img0.getCvImage(), nextPoints0, frame0, img1.getCvImage(), prevPoints1, frame1, sizeAlpha, blendAlpha)
+        blendedFrame = createBlendedFrame(cfgDict, 0, sizeAlpha, blendAlpha)
+
         cv.imshow(f'Blended Frame', blendedFrame)
         cv.waitKey(1)
 
