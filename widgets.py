@@ -1039,7 +1039,11 @@ class imageMarkersEditor(QWidget):
 			painter.drawLine(QPointF(center.x(), center.y() - CROSS_SIZE),
 				QPointF(center.x(), center.y() + CROSS_SIZE))
 
-		point_colors = (QColor("red"), QColor("green"), QColor("blue"))
+		point_colors = (
+			QColor("#ff7777"),
+			QColor("#75e695"),
+			QColor("#78aaff"),
+		)
 		for point, color in zip(self.points, point_colors):
 			position = self.image_to_widget(point)
 			for line_color, line_width, line_size in (
