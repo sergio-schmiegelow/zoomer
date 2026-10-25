@@ -903,9 +903,8 @@ class imageMarkersEditor(QWidget):
 		for point, color in zip(self.points, point_colors):
 			position = self.image_to_widget(point)
 			for line_color, line_width, line_size in (
-				(QColor("black"), 7, CROSS_SIZE),
-				(QColor("white"), 4, CROSS_SIZE - 4),
-				(color, 2, CROSS_SIZE - 8),
+				(QColor("black"), 3, CROSS_SIZE),
+				(color, 2, CROSS_SIZE - 2),
 			):
 				painter.setPen(QPen(line_color, line_width))
 				half_size = line_size / 2
