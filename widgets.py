@@ -259,6 +259,7 @@ class previewArea(QWidget):
 		self.fusion_image_label = _FitImageLabel("Fusion preview unavailable")
 		self.tabs.addTab(self.input_image_label, "Input image")
 		self.tabs.addTab(self.fusion_image_label, "Fusion preview")
+		self.tabs.setCurrentWidget(self.fusion_image_label)
 		self.tabs.currentChanged.connect(self._update_previews)
 		layout = QVBoxLayout(self)
 		layout.setContentsMargins(0, 0, 0, 0)
