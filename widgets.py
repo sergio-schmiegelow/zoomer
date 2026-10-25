@@ -694,6 +694,8 @@ class imageFusionEditor(QWidget):
 				entry["image"], frame_top_left, frame_width,
 				frame_width / frame_height, points, column
 			)
+			editor._fitted = True
+			QTimer.singleShot(0, editor.zoom_to_frame)
 			zoom_all_button.clicked.connect(editor.zoom_all)
 			zoom_points_button.clicked.connect(editor.zoom_to_points)
 			zoom_frame_button.clicked.connect(editor.zoom_to_frame)
