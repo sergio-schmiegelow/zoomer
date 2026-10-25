@@ -48,6 +48,40 @@ def _zoom_all_icon():
 	return QIcon(icon_image)
 
 
+def _zoom_points_icon():
+	icon_image = QPixmap(24, 24)
+	icon_image.fill(Qt.GlobalColor.transparent)
+	painter = QPainter(icon_image)
+	painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+	for center, color in (
+		(QPointF(6, 7), QColor("#ed514e")),
+		(QPointF(18, 7), QColor("#4ecb75")),
+		(QPointF(12, 18), QColor("#4d8ee8")),
+	):
+		painter.setPen(QPen(QColor("#071b1a"), 4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.SquareCap))
+		painter.drawLine(QPointF(center.x() - 3, center.y()), QPointF(center.x() + 3, center.y()))
+		painter.drawLine(QPointF(center.x(), center.y() - 3), QPointF(center.x(), center.y() + 3))
+		painter.setPen(QPen(color, 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.SquareCap))
+		painter.drawLine(QPointF(center.x() - 3, center.y()), QPointF(center.x() + 3, center.y()))
+		painter.drawLine(QPointF(center.x(), center.y() - 3), QPointF(center.x(), center.y() + 3))
+	painter.end()
+	return QIcon(icon_image)
+
+
+def _zoom_frame_icon():
+	icon_image = QPixmap(24, 24)
+	icon_image.fill(Qt.GlobalColor.transparent)
+	painter = QPainter(icon_image)
+	painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+	painter.setBrush(Qt.BrushStyle.NoBrush)
+	painter.setPen(QPen(QColor("#071b1a"), 5))
+	painter.drawRect(QRectF(4, 6, 16, 12))
+	painter.setPen(QPen(QColor("#ff9f43"), 2))
+	painter.drawRect(QRectF(4, 6, 16, 12))
+	painter.end()
+	return QIcon(icon_image)
+
+
 def load_oriented_image(image_object):
 	if hasattr(image_object, "getCvImage") and hasattr(image_object, "setQtImage"):
 		qt_image = image_object.getQtImage()
@@ -624,6 +658,8 @@ class imageFusionEditor(QWidget):
 			if points is None:
 				points = [[0, 0], [1, 0], [0, 1]]
 			canvas_row = QHBoxLayout()
+			zoom_toolbar = QVBoxLayout()
+			zoom_toolbar.setSpacing(4)
 			zoom_all_button = QToolButton(column)
 			zoom_all_button.setObjectName("zoomAllButton")
 			zoom_all_button.setIcon(_zoom_all_icon())
@@ -643,12 +679,24 @@ class imageFusionEditor(QWidget):
 				"border-top-color: #101414; border-left-color: #101414;"
 				"border-bottom-color: #929b99; border-right-color: #7d8785; }"
 			)
-			canvas_row.addWidget(zoom_all_button, 0, Qt.AlignmentFlag.AlignTop)
+			zoom_points_button = self._make_zoom_button(
+				column, "zoomPointsButton", _zoom_points_icon(), "Zoom to points"
+			)
+			zoom_frame_button = self._make_zoom_button(
+				column, "zoomFrameButton", _zoom_frame_icon(), "Zoom to frame"
+			)
+			zoom_toolbar.addWidget(zoom_all_button)
+			zoom_toolbar.addWidget(zoom_points_button)
+			zoom_toolbar.addWidget(zoom_frame_button)
+			zoom_toolbar.addStretch(1)
+			canvas_row.addLayout(zoom_toolbar, 0)
 			editor = imageMarkersEditor(
 				entry["image"], frame_top_left, frame_width,
 				frame_width / frame_height, points, column
 			)
 			zoom_all_button.clicked.connect(editor.zoom_all)
+			zoom_points_button.clicked.connect(editor.zoom_to_points)
+			zoom_frame_button.clicked.connect(editor.zoom_to_frame)
 			editor.setObjectName("imageMarkersEditor")
 			editor.frame_crosshair_enabled = self.frame_crosshair_enabled
 			editor.frameChanged.connect(
@@ -666,6 +714,29 @@ class imageFusionEditor(QWidget):
 		self.pair_splitter.setStretchFactor(0, 1)
 		self.pair_splitter.setStretchFactor(1, 1)
 		self._emit_fusion_preview_request()
+
+	@staticmethod
+	def _make_zoom_button(parent, object_name, icon, tooltip):
+		button = QToolButton(parent)
+		button.setObjectName(object_name)
+		button.setIcon(icon)
+		button.setIconSize(QSize(24, 24))
+		button.setFixedSize(40, 40)
+		button.setToolTip(tooltip)
+		button.setAccessibleName(tooltip)
+		button.setAutoRaise(False)
+		button.setStyleSheet(
+			"QToolButton {"
+			"background-color: #454b4b; border: 1px solid #101414;"
+			"border-top-color: #929b99; border-left-color: #7d8785;"
+			"border-radius: 4px; padding: 2px; }"
+			"QToolButton:hover { background-color: #586260;"
+			"border-top-color: #c3cfcc; border-left-color: #aab5b2; }"
+			"QToolButton:pressed { background-color: #252a29;"
+			"border-top-color: #101414; border-left-color: #101414;"
+			"border-bottom-color: #929b99; border-right-color: #7d8785; }"
+		)
+		return button
 
 	def set_frame_crosshair_enabled(self, enabled):
 		self.frame_crosshair_enabled = bool(enabled)
@@ -883,6 +954,32 @@ class imageMarkersEditor(QWidget):
 		bounds = QRectF(
 			min(all_x), min(all_y), max(all_x) - min(all_x), max(all_y) - min(all_y)
 		)
+		self._zoom_to_bounds(bounds)
+
+	def zoom_to_points(self):
+		if not self.points:
+			return
+		all_x = [point.x() for point in self.points]
+		all_y = [point.y() for point in self.points]
+		self._zoom_to_bounds(QRectF(
+			min(all_x), min(all_y), max(all_x) - min(all_x), max(all_y) - min(all_y)
+		))
+
+	def zoom_to_frame(self):
+		self._zoom_to_bounds(QRectF(
+			self.frame_x,
+			self.frame_y,
+			self.frame_width,
+			self.frame_height,
+		))
+
+	def _zoom_to_bounds(self, bounds):
+		if self.width() <= 0 or self.height() <= 0:
+			return
+		if bounds.width() <= 0:
+			bounds.setWidth(1.0)
+		if bounds.height() <= 0:
+			bounds.setHeight(1.0)
 		padding = CROSS_SIZE + 8
 		view = QRectF(self.rect())
 		available_width = max(1, view.width() - 2 * padding)
