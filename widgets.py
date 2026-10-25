@@ -280,29 +280,99 @@ class _FitImageLabel(QLabel):
 	def __init__(self, empty_text, parent=None):
 		super().__init__(empty_text, parent)
 		self._source_pixmap = QPixmap()
+		self._zoom = 1.0
+		self._pan = QPointF()
+		self._drag_position = None
 		self.setAlignment(Qt.AlignmentFlag.AlignCenter)
 		self.setMinimumSize(160, 120)
 		self.setStyleSheet("background-color: #202020; color: white;")
+		self.setMouseTracking(True)
 
 	def set_source_pixmap(self, pixmap):
 		self._source_pixmap = pixmap
+		self.zoom_all()
 		if pixmap.isNull():
 			self.setPixmap(QPixmap())
 		else:
 			self.setText("")
-			self._fit_image()
+		self.update()
 
 	def resizeEvent(self, event):
 		super().resizeEvent(event)
-		self._fit_image()
+		self.zoom_all()
 
-	def _fit_image(self):
-		if not self._source_pixmap.isNull():
-			self.setPixmap(self._source_pixmap.scaled(
-				self.contentsRect().size(),
-				Qt.AspectRatioMode.KeepAspectRatio,
-				Qt.TransformationMode.SmoothTransformation,
-			))
+	def zoom_all(self):
+		self._zoom = 1.0
+		self._pan = QPointF()
+		self.update()
+
+	def paintEvent(self, event):
+		if self._source_pixmap.isNull():
+			return super().paintEvent(event)
+		painter = QPainter(self)
+		painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+		bounds = self.contentsRect()
+		base_scale = min(
+			bounds.width() / self._source_pixmap.width(),
+			bounds.height() / self._source_pixmap.height(),
+		)
+		scale = base_scale * self._zoom
+		width = self._source_pixmap.width() * scale
+		height = self._source_pixmap.height() * scale
+		center = QPointF(bounds.center()) + self._pan
+		target = QRectF(center.x() - width / 2, center.y() - height / 2, width, height)
+		painter.drawPixmap(target, self._source_pixmap, QRectF(self._source_pixmap.rect()))
+
+	def mousePressEvent(self, event):
+		if event.button() == Qt.MouseButton.LeftButton and not self._source_pixmap.isNull():
+			self._drag_position = event.position()
+			self.setCursor(Qt.CursorShape.ClosedHandCursor)
+			event.accept()
+			return
+		super().mousePressEvent(event)
+
+	def mouseMoveEvent(self, event):
+		if self._drag_position is not None and event.buttons() & Qt.MouseButton.LeftButton:
+			position = event.position()
+			self._pan += position - self._drag_position
+			self._drag_position = position
+			self.update()
+			event.accept()
+			return
+		super().mouseMoveEvent(event)
+
+	def mouseReleaseEvent(self, event):
+		if event.button() == Qt.MouseButton.LeftButton and self._drag_position is not None:
+			self._drag_position = None
+			self.unsetCursor()
+			event.accept()
+			return
+		super().mouseReleaseEvent(event)
+
+	def wheelEvent(self, event):
+		if self._source_pixmap.isNull():
+			return super().wheelEvent(event)
+		bounds = self.contentsRect()
+		base_scale = min(
+			bounds.width() / self._source_pixmap.width(),
+			bounds.height() / self._source_pixmap.height(),
+		)
+		old_scale = base_scale * self._zoom
+		center = QPointF(bounds.center())
+		cursor_position = event.position()
+		image_position = QPointF(
+			(cursor_position.x() - center.x() - self._pan.x()) / old_scale + self._source_pixmap.width() / 2,
+			(cursor_position.y() - center.y() - self._pan.y()) / old_scale + self._source_pixmap.height() / 2,
+		)
+		factor = 1.15 ** (event.angleDelta().y() / 120)
+		self._zoom = max(0.1, min(20.0, self._zoom * factor))
+		new_scale = base_scale * self._zoom
+		self._pan = QPointF(
+			cursor_position.x() - center.x() - (image_position.x() - self._source_pixmap.width() / 2) * new_scale,
+			cursor_position.y() - center.y() - (image_position.y() - self._source_pixmap.height() / 2) * new_scale,
+		)
+		self.update()
+		event.accept()
 
 
 class previewArea(QWidget):
@@ -318,16 +388,28 @@ class previewArea(QWidget):
 		self.tabs.currentChanged.connect(self._update_previews)
 		layout = QVBoxLayout(self)
 		layout.setContentsMargins(0, 0, 0, 0)
+		toolbar = QHBoxLayout()
+		self.zoom_all_button = QToolButton(self)
+		self.zoom_all_button.setIcon(_zoom_all_icon())
+		self.zoom_all_button.setIconSize(QSize(20, 20))
+		self.zoom_all_button.setToolTip("Zoom all")
+		self.zoom_all_button.clicked.connect(self.zoom_all)
+		toolbar.addWidget(self.zoom_all_button)
+		toolbar.addStretch(1)
+		layout.addLayout(toolbar)
 		layout.addWidget(self.tabs)
 		self._input_pixmap = QPixmap()
 		self._fusion_pixmap = QPixmap()
 
 	def set_image(self, image_object):
-		image = load_oriented_image(image_object) if image_object else QImage()
+		has_image = image_object is not None and not (
+			isinstance(image_object, str) and not image_object
+		)
+		image = load_oriented_image(image_object) if has_image else QImage()
 		if image.isNull():
 			self._input_pixmap = QPixmap()
 			self.input_image_label.setText(
-				"Select an image to preview" if not image_object else "Unable to load image"
+				"Select an image to preview" if not has_image else "Unable to load image"
 			)
 		else:
 			self._input_pixmap = QPixmap.fromImage(image)
@@ -352,24 +434,25 @@ class previewArea(QWidget):
 
 	def resizeEvent(self, event):
 		super().resizeEvent(event)
-		QTimer.singleShot(0, self._update_previews)
+		QTimer.singleShot(0, self._fit_previews)
+
+	def _fit_previews(self):
+		self.input_image_label.zoom_all()
+		self.fusion_image_label.zoom_all()
+		self._update_previews()
+
+	def zoom_all(self):
+		current_label = self.tabs.currentWidget()
+		if isinstance(current_label, _FitImageLabel):
+			current_label.zoom_all()
 
 	def _update_previews(self, _index=None):
 		_ = _index
 		current_label = self.tabs.currentWidget()
 		if current_label is None:
 			return
-		page_size = current_label.contentsRect().size()
-		for label, source_pixmap in (
-			(self.input_image_label, self._input_pixmap),
-			(self.fusion_image_label, self._fusion_pixmap),
-		):
-			if not source_pixmap.isNull():
-				label.setPixmap(source_pixmap.scaled(
-					page_size,
-					Qt.AspectRatioMode.KeepAspectRatio,
-					Qt.TransformationMode.SmoothTransformation,
-				))
+		self.input_image_label.update()
+		self.fusion_image_label.update()
 
 
 class FusionStepSlider(QWidget):
