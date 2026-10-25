@@ -77,11 +77,14 @@ class MainApp(QMainWindow):
 
 	def select_export_filename(self, _checked=False):
 		filename, _selected_filter = QFileDialog.getSaveFileName(
-			self, "Export video", "",
-			"MP4 video (*.mp4);;All files (*)",
+			self, "Export video", "output.avi",
+			"AVI video (*.avi);;All files (*)",
 		)
 		if filename:
-			self.export_filename = filename
+			export_path = Path(filename)
+			if export_path.suffix.lower() != ".avi":
+				export_path = export_path.with_suffix(".avi")
+			self.export_filename = str(export_path)
 
 	def set_image_workspace(self, image_entries, base_directory):
 		self.image_entries = self.configData["images_data"]

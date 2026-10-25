@@ -284,7 +284,7 @@ def generateVideo(configData:dict, filename:str):
     print("DEBUG - Video dimensions:", videoDims)
     videoFPS = int(configData['video_data']['FPS'])
     interpolationMethod = configData['video_data'].get('interpolation_method', 'log')
-    videoWriter = cv.VideoWriter(filename, cv.VideoWriter_fourcc(*'mp4v'), videoFPS, tuple(videoDims))
+    videoWriter = cv.VideoWriter(filename, cv.VideoWriter_fourcc(*'XVID'), videoFPS, tuple(videoDims))
     if not videoWriter.isOpened():
         print("ERROR - Failed to open video writer")
         return
@@ -304,7 +304,7 @@ def generateVideo(configData:dict, filename:str):
 if __name__ == "__main__": 
     cfgFile = 'autosave.json'
     cfgDict = loadConfig(cfgFile)
-    generateVideo(cfgDict, "output.mp4")
+    generateVideo(cfgDict, "output.avi")
     quit()
 
 
