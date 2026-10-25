@@ -1,8 +1,8 @@
 from pathlib import Path
 
 import cv2 as cv
-from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QImage, QImageReader, QPainter, QPen, QPixmap
+from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QIcon, QImage, QImageReader, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
 	QAbstractItemView,
 	QComboBox,
@@ -20,11 +20,32 @@ from PyQt6.QtWidgets import (
 	QSplitter,
 	QSpinBox,
 	QTabWidget,
+	QToolButton,
 	QVBoxLayout,
 	QWidget,
 )
 
 CROSS_SIZE = 20
+
+
+def _zoom_all_icon():
+	icon_image = QPixmap(24, 24)
+	icon_image.fill(Qt.GlobalColor.transparent)
+	painter = QPainter(icon_image)
+	painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+	# Corner brackets suggest fitting the entire image into view.
+	for color, width, offset in (
+		(QColor("#071b1a"), 5, 1),
+		(QColor("#35d5c4"), 2, 0),
+	):
+		painter.setPen(QPen(color, width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.SquareCap))
+		for x_sign, y_sign in ((1, 1), (-1, 1), (1, -1), (-1, -1)):
+			x = 12 + x_sign * 8 + offset
+			y = 12 + y_sign * 8 + offset
+			painter.drawLine(x, y, x - x_sign * 5, y)
+			painter.drawLine(x, y, x, y - y_sign * 5)
+	painter.end()
+	return QIcon(icon_image)
 
 
 def load_oriented_image(image_object):
@@ -602,10 +623,32 @@ class imageFusionEditor(QWidget):
 			points = entry.get(points_field)
 			if points is None:
 				points = [[0, 0], [1, 0], [0, 1]]
+			canvas_row = QHBoxLayout()
+			zoom_all_button = QToolButton(column)
+			zoom_all_button.setObjectName("zoomAllButton")
+			zoom_all_button.setIcon(_zoom_all_icon())
+			zoom_all_button.setIconSize(QSize(24, 24))
+			zoom_all_button.setFixedSize(40, 40)
+			zoom_all_button.setToolTip("Zoom all")
+			zoom_all_button.setAccessibleName("Zoom all")
+			zoom_all_button.setAutoRaise(False)
+			zoom_all_button.setStyleSheet(
+				"QToolButton#zoomAllButton {"
+				"background-color: #454b4b; border: 1px solid #101414;"
+				"border-top-color: #929b99; border-left-color: #7d8785;"
+				"border-radius: 4px; padding: 2px; }"
+				"QToolButton#zoomAllButton:hover { background-color: #586260;"
+				"border-top-color: #c3cfcc; border-left-color: #aab5b2; }"
+				"QToolButton#zoomAllButton:pressed { background-color: #252a29;"
+				"border-top-color: #101414; border-left-color: #101414;"
+				"border-bottom-color: #929b99; border-right-color: #7d8785; }"
+			)
+			canvas_row.addWidget(zoom_all_button, 0, Qt.AlignmentFlag.AlignTop)
 			editor = imageMarkersEditor(
 				entry["image"], frame_top_left, frame_width,
 				frame_width / frame_height, points, column
 			)
+			zoom_all_button.clicked.connect(editor.zoom_all)
 			editor.setObjectName("imageMarkersEditor")
 			editor.frame_crosshair_enabled = self.frame_crosshair_enabled
 			editor.frameChanged.connect(
@@ -615,7 +658,8 @@ class imageFusionEditor(QWidget):
 				lambda value, index=entry_index, field=points_field:
 					self.imageEdited.emit(index, field, value)
 			)
-			column_layout.addWidget(editor, 1)
+			canvas_row.addWidget(editor, 1)
+			column_layout.addLayout(canvas_row, 1)
 			column.filename_label = filename_label
 			column.editor = editor
 			self.pair_splitter.addWidget(column)
@@ -803,9 +847,6 @@ class imageMarkersEditor(QWidget):
 		self._drag_point = None
 		self._last_mouse_position = QPointF()
 		self.frame_crosshair_enabled = True
-		self.zoom_all_button = QPushButton("Zoom all", self)
-		self.zoom_all_button.setFixedSize(96, 34)
-		self.zoom_all_button.clicked.connect(self.zoom_all)
 		self.setMinimumSize(480, 360)
 		self.setMouseTracking(True)
 		self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -822,7 +863,6 @@ class imageMarkersEditor(QWidget):
 
 	def resizeEvent(self, _event):
 		super().resizeEvent(_event)
-		self.zoom_all_button.move(self.width() - self.zoom_all_button.width() - 12, 10)
 		if not self._fitted:
 			self.zoom_all()
 
@@ -844,7 +884,7 @@ class imageMarkersEditor(QWidget):
 			min(all_x), min(all_y), max(all_x) - min(all_x), max(all_y) - min(all_y)
 		)
 		padding = CROSS_SIZE + 8
-		view = QRectF(0, 48, self.width(), self.height() - 48)
+		view = QRectF(self.rect())
 		available_width = max(1, view.width() - 2 * padding)
 		available_height = max(1, view.height() - 2 * padding)
 		self.scale = min(available_width / bounds.width(), available_height / bounds.height())
