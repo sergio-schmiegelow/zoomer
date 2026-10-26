@@ -1,4 +1,5 @@
 import copy
+import json
 import sys
 import math
 import random
@@ -17,16 +18,26 @@ from widgets import (
 from zoomer_backend import imageClass, loadConfig, saveConfig, createBlendedFrame
 
 HISTORY_LIMIT = 10
+APP_CONFIG_DEFAULTS = {
+	"frame_crosshair": True,
+	"auto_open_last_project": False,
+	"last_project": "",
+}
 
 
 class MainApp(QMainWindow):
-	def __init__(self, config_data, autosave_path):
+	def __init__(self, config_data=None, autosave_path=None, app_config=None, app_config_path=None):
 		super().__init__()
-		self.configData = config_data
+		self.configData = config_data if config_data is not None else {
+			"video_data": {}, "images_data": []
+		}
 		self.video_settings = self.configData.setdefault("video_data", {})
 		self.configData.setdefault("images_data", [])
-		self.autosave_path = Path(autosave_path)
-		self.project_filename = str(self.autosave_path)
+		self.project_filename = (
+			str(autosave_path) if autosave_path and Path(autosave_path).suffix.lower() == ".zmr" else None
+		)
+		self.app_config_path = Path(app_config_path or Path(__file__).resolve().parent / "zoomer.cfg")
+		self.app_config = {**APP_CONFIG_DEFAULTS, **(app_config or {})}
 		self.export_filename = ""
 		self.image_entries = []
 		self._undo_stack = deque(maxlen=HISTORY_LIMIT)
@@ -37,17 +48,19 @@ class MainApp(QMainWindow):
 		self._edit_burst_timer.setInterval(600)
 		self.setWindowTitle("Zoomer")
 		self._create_menus()
+		self._update_window_title()
+		self._save_app_config()
 
 	def _create_menus(self):
 		file_menu = self.menuBar().addMenu("&File")
-		open_action = file_menu.addAction("Open...")
+		open_action = file_menu.addAction("Open project")
 		open_action.setShortcut(QKeySequence.StandardKey.Open)
 		open_action.triggered.connect(self.open_project)
-		save_action = file_menu.addAction("Save")
+		save_action = file_menu.addAction("Save project")
 		save_action.triggered.connect(self.save_project)
-		save_as_action = file_menu.addAction("Save as...")
+		save_as_action = file_menu.addAction("Save project as")
 		save_as_action.triggered.connect(self.save_as)
-		new_action = file_menu.addAction("New...")
+		new_action = file_menu.addAction("New project")
 		new_action.triggered.connect(self.new_project)
 
 		edit_menu = self.menuBar().addMenu("&Edit")
@@ -67,13 +80,41 @@ class MainApp(QMainWindow):
 		options_menu = self.menuBar().addMenu("&Options")
 		self.frame_crosshair_action = options_menu.addAction("Frame crosshair")
 		self.frame_crosshair_action.setCheckable(True)
-		self.frame_crosshair_action.setChecked(True)
+		self.frame_crosshair_action.setChecked(bool(self.app_config["frame_crosshair"]))
 		self.frame_crosshair_action.toggled.connect(self._set_frame_crosshair_enabled)
+		self.auto_open_last_project_action = options_menu.addAction("Auto open last project")
+		self.auto_open_last_project_action.setCheckable(True)
+		self.auto_open_last_project_action.setChecked(
+			bool(self.app_config["auto_open_last_project"])
+		)
+		self.auto_open_last_project_action.toggled.connect(self._set_auto_open_last_project)
+
+	def _save_app_config(self):
+		self.app_config_path.parent.mkdir(parents=True, exist_ok=True)
+		temporary_path = self.app_config_path.with_name(self.app_config_path.name + ".tmp")
+		with temporary_path.open("w", encoding="utf-8") as config_file:
+			json.dump(self.app_config, config_file, indent=2)
+		temporary_path.replace(self.app_config_path)
+
+	def _set_auto_open_last_project(self, enabled):
+		self.app_config["auto_open_last_project"] = bool(enabled)
+		self._save_app_config()
+
+	def _remember_project(self, filename):
+		self.app_config["last_project"] = str(Path(filename).resolve())
+		self._save_app_config()
+		self._update_window_title()
+
+	def _update_window_title(self):
+		project_name = self.configData.get("project_name", "")
+		if not project_name and self.project_filename:
+			project_name = Path(self.project_filename).stem
+		self.setWindowTitle(f"Zoomer - {project_name}" if project_name else "Zoomer - No project")
 
 	def open_project(self, _checked=False):
 		filename, _selected_filter = QFileDialog.getOpenFileName(
-			self, "Open project", self.project_filename,
-			"JSON files (*.json);;All files (*)",
+			self, "Open project", self.project_filename or str(Path.home()),
+			"Zoomer projects (*.zmr);;All files (*)",
 		)
 		if not filename:
 			return
@@ -89,29 +130,60 @@ class MainApp(QMainWindow):
 		self.project_filename = filename
 		self.base_directory = Path(filename).resolve().parent
 		loaded.setdefault("images_data", [])
+		loaded.setdefault("video_data", {})
 		self._apply_restored_config(loaded)
+		self._remember_project(filename)
 		if self._normalize_boundary_points():
 			self.save_autosave()
 
 	def save_project(self, _checked=False):
+		if not self.project_filename:
+			self.new_project()
+			return
 		saveConfig(self.project_filename, self.configData)
+		self._remember_project(self.project_filename)
 
 	def save_as(self, _checked=False):
 		filename, _selected_filter = QFileDialog.getSaveFileName(
-			self, "Save project as", self.project_filename,
-			"JSON files (*.json);;All files (*)",
+			self, "Save project as", self.project_filename or str(Path.home()),
+			"Zoomer projects (*.zmr)",
 		)
 		if filename:
-			self.project_filename = filename
+			self.project_filename = str(Path(filename).with_suffix(".zmr"))
+			self.configData["project_name"] = Path(self.project_filename).stem
 			saveConfig(self.project_filename, self.configData)
+			self._remember_project(self.project_filename)
 
 	def new_project(self, _checked=False):
+		dialog = VideoSettingsDialog({}, self, project_mode=True)
+		if not dialog.exec():
+			return
+		project_name = dialog.project_name()
+		if not project_name or Path(project_name).name != project_name or "\\" in project_name:
+			QMessageBox.warning(self, "New project", "Enter a project name without path separators.")
+			return
+		suggested_path = str(Path.home() / f"{project_name}.zmr")
 		filename, _selected_filter = QFileDialog.getSaveFileName(
-			self, "New project", "",
-			"JSON files (*.json);;All files (*)",
+			self, "Create project", suggested_path, "Zoomer projects (*.zmr)",
 		)
-		if filename:
-			self.project_filename = filename
+		if not filename:
+			return
+		self._undo_stack.clear()
+		self._redo_stack.clear()
+		self._edit_burst_timer.stop()
+		self.project_filename = str(Path(filename).with_suffix(".zmr"))
+		self.base_directory = Path(self.project_filename).resolve().parent
+		self.configData.clear()
+		self.configData.update({
+			"project_name": project_name,
+			"video_data": dialog.settings(),
+			"images_data": [],
+		})
+		self.video_settings = self.configData["video_data"]
+		self.image_entries = self.configData["images_data"]
+		self._apply_restored_config(dict(self.configData))
+		saveConfig(self.project_filename, self.configData)
+		self._remember_project(self.project_filename)
 
 	def open_video_settings(self, _checked=False):
 		dialog = VideoSettingsDialog(self.video_settings, self)
@@ -165,6 +237,8 @@ class MainApp(QMainWindow):
 		self._show_pair(max(0, organizer.image_list.currentRow()))
 
 	def _set_frame_crosshair_enabled(self, enabled):
+		self.app_config["frame_crosshair"] = bool(enabled)
+		self._save_app_config()
 		if hasattr(self, "image_fusion_editor"):
 			self.image_fusion_editor.set_frame_crosshair_enabled(enabled)
 
@@ -339,10 +413,8 @@ class MainApp(QMainWindow):
 		return [[center_x + x, center_y + y] for x, y in vertices]
 
 	def save_autosave(self):
-		self.autosave_path.parent.mkdir(parents=True, exist_ok=True)
-		temporary_path = self.autosave_path.with_name(self.autosave_path.name + ".tmp")
-		saveConfig(str(temporary_path), self.configData)
-		temporary_path.replace(self.autosave_path)
+		if self.project_filename:
+			saveConfig(self.project_filename, self.configData)
 
 	def _paths_for_entries(self):
 		return [
@@ -430,14 +502,31 @@ class MainApp(QMainWindow):
 
 def main() -> int:
 	app = QApplication(sys.argv)
-	config_path = Path(__file__).resolve().parent / "autosave.json"
-	if config_path.exists():
-		config_data = loadConfig(str(config_path))
+	app_directory = Path(__file__).resolve().parent
+	app_config_path = app_directory / "zoomer.cfg"
+	try:
+		with app_config_path.open("r", encoding="utf-8") as config_file:
+			app_config = {**APP_CONFIG_DEFAULTS, **json.load(config_file)}
+	except (OSError, json.JSONDecodeError):
+		app_config = dict(APP_CONFIG_DEFAULTS)
+	window = MainApp(app_config=app_config, app_config_path=app_config_path)
+	window.set_image_workspace([], app_directory)
+	last_project = app_config.get("last_project", "")
+	if app_config.get("auto_open_last_project") and last_project and Path(last_project).is_file():
+		window.project_filename = last_project
+		try:
+			loaded_project = loadConfig(last_project)
+			loaded_project.setdefault("project_name", Path(last_project).stem)
+			window.base_directory = Path(last_project).resolve().parent
+			window._apply_restored_config(loaded_project)
+			if window._normalize_boundary_points():
+				window.save_autosave()
+			window._remember_project(last_project)
+		except (OSError, ValueError, KeyError, json.JSONDecodeError) as error:
+			QMessageBox.warning(window, "Open project", f"Unable to open {last_project}:\n{error}")
+			QTimer.singleShot(0, window.new_project)
 	else:
-		fallback_path = Path(__file__).resolve().parent / "prat.json"
-		config_data = loadConfig(str(fallback_path))
-	window = MainApp(config_data, config_path)
-	window.set_image_workspace(config_data["images_data"], config_path.parent)
+		QTimer.singleShot(0, window.new_project)
 	window.resize(1000, 700)
 	window.show()
 	return app.exec()

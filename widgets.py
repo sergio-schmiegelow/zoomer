@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
 	QGridLayout,
 	QHBoxLayout,
 	QLabel,
+	QLineEdit,
 	QListWidget,
 	QListWidgetItem,
 	QPushButton,
@@ -858,11 +859,15 @@ class VideoSettingsDialog(QDialog):
 	}
 	FRAME_RATES = (23.976, 24, 25, 29.97, 30, 50, 59.94, 60, 120)
 
-	def __init__(self, video_data, parent=None):
+	def __init__(self, video_data, parent=None, project_mode=False, project_name=""):
 		super().__init__(parent)
-		self.setWindowTitle("Video Settings")
+		self.setWindowTitle("New Project" if project_mode else "Video Settings")
 		self.setModal(True)
 		layout = QFormLayout(self)
+		self.project_name_input = None
+		if project_mode:
+			self.project_name_input = QLineEdit(project_name)
+			layout.addRow("Project name", self.project_name_input)
 
 		self.video_size_combo = QComboBox()
 		for label, dimensions in self.VIDEO_SIZES.items():
@@ -970,6 +975,9 @@ class VideoSettingsDialog(QDialog):
 			"duration": self.duration_spin.value(),
 			"interpolation_method": self.interpolation_method_combo.currentData(),
 		}
+
+	def project_name(self):
+		return self.project_name_input.text().strip() if self.project_name_input else ""
 
 
 class imageMarkersEditor(QWidget):
