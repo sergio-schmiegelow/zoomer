@@ -1,9 +1,12 @@
+import copy
 import sys
 import math
 import random
+from collections import deque
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QKeySequence
 from PyQt6.QtWidgets import QApplication, QFileDialog, QMainWindow, QSplitter
 
 from widgets import (
@@ -12,6 +15,8 @@ from widgets import (
 	imageFusionEditionArea,
 )
 from zoomer_backend import imageClass, loadConfig, saveConfig, createBlendedFrame
+
+HISTORY_LIMIT = 10
 
 
 class MainApp(QMainWindow):
@@ -24,6 +29,12 @@ class MainApp(QMainWindow):
 		self.project_filename = str(self.autosave_path)
 		self.export_filename = ""
 		self.image_entries = []
+		self._undo_stack = deque(maxlen=HISTORY_LIMIT)
+		self._redo_stack = deque(maxlen=HISTORY_LIMIT)
+		# Drags emit many edits; one burst becomes a single history entry.
+		self._edit_burst_timer = QTimer(self)
+		self._edit_burst_timer.setSingleShot(True)
+		self._edit_burst_timer.setInterval(600)
 		self.setWindowTitle("Zoomer")
 		self._create_menus()
 
@@ -35,6 +46,14 @@ class MainApp(QMainWindow):
 		save_as_action.triggered.connect(self.save_as)
 		new_action = file_menu.addAction("New...")
 		new_action.triggered.connect(self.new_project)
+
+		edit_menu = self.menuBar().addMenu("&Edit")
+		undo_action = edit_menu.addAction("Undo")
+		undo_action.setShortcut(QKeySequence("Ctrl+Z"))
+		undo_action.triggered.connect(self.undo)
+		redo_action = edit_menu.addAction("Redo")
+		redo_action.setShortcut(QKeySequence("Ctrl+Y"))
+		redo_action.triggered.connect(self.redo)
 
 		video_action = self.menuBar().addAction("&Video")
 		video_action.triggered.connect(self.open_video_settings)
@@ -71,6 +90,7 @@ class MainApp(QMainWindow):
 	def open_video_settings(self, _checked=False):
 		dialog = VideoSettingsDialog(self.video_settings, self)
 		if dialog.exec():
+			self._record_history()
 			self.video_settings = dialog.settings()
 			self.configData["video_data"] = self.video_settings
 			self.save_autosave()
@@ -145,12 +165,86 @@ class MainApp(QMainWindow):
 			if entry is None:
 				entry = self._new_image_entry(path)
 			updated_entries.append(entry)
+		unchanged = len(updated_entries) == len(self.image_entries) and all(
+			new is old for new, old in zip(updated_entries, self.image_entries)
+		)
+		if not unchanged:
+			self._record_history()
 		self.image_entries = updated_entries
 		self.configData["images_data"] = updated_entries
 		self._normalize_boundary_points()
 		self.save_autosave()
 		current_row = self.image_files_and_preview_area.image_files_organizer.image_list.currentRow()
 		self._show_pair(max(0, current_row))
+
+	def _snapshot(self):
+		snapshot = {
+			key: copy.deepcopy(value)
+			for key, value in self.configData.items() if key != "images_data"
+		}
+		snapshot["images_data"] = []
+		for entry in self.image_entries:
+			saved = {key: copy.deepcopy(value) for key, value in entry.items() if key != "image"}
+			saved["image"] = str(self._image_path(entry))
+			snapshot["images_data"].append(saved)
+		return snapshot
+
+	def _record_history(self, coalesce=False):
+		if coalesce:
+			burst_active = self._edit_burst_timer.isActive()
+			self._edit_burst_timer.start()
+			if burst_active:
+				return
+		self._undo_stack.append(self._snapshot())
+		self._redo_stack.clear()
+
+	def undo(self, _checked=False):
+		self._travel_history(self._undo_stack, self._redo_stack)
+
+	def redo(self, _checked=False):
+		self._travel_history(self._redo_stack, self._undo_stack)
+
+	def _travel_history(self, source, target):
+		if not source:
+			return
+		current_images = {str(self._image_path(entry)): entry["image"] for entry in self.image_entries}
+		try:
+			restored = self._restore_snapshot(source[-1], current_images)
+		except ValueError as error:
+			print(error)
+			return
+		target.append(self._snapshot())
+		source.pop()
+		self._edit_burst_timer.stop()
+		self._apply_restored_config(restored)
+
+	@staticmethod
+	def _restore_snapshot(snapshot, current_images):
+		restored = {
+			key: copy.deepcopy(value) for key, value in snapshot.items() if key != "images_data"
+		}
+		restored["images_data"] = []
+		for saved in snapshot["images_data"]:
+			entry = copy.deepcopy(saved)
+			path = entry["image"]
+			image = current_images.get(path)
+			entry["image"] = image if image is not None else imageClass(path)
+			restored["images_data"].append(entry)
+		return restored
+
+	def _apply_restored_config(self, restored):
+		organizer = self.image_files_and_preview_area.image_files_organizer
+		row = organizer.image_list.currentRow()
+		self.configData.clear()
+		self.configData.update(restored)
+		self.video_settings = self.configData.setdefault("video_data", {})
+		self.image_entries = self.configData["images_data"]
+		organizer.blockSignals(True)
+		organizer.set_image_files([self._path_for_entry(entry) for entry in self.image_entries])
+		organizer.image_list.setCurrentRow(min(max(row, 0), organizer.image_list.count() - 1))
+		organizer.blockSignals(False)
+		self.save_autosave()
+		self._show_pair(max(0, organizer.image_list.currentRow()))
 
 	def _normalize_boundary_points(self):
 		if not self.image_entries:
@@ -283,6 +377,7 @@ class MainApp(QMainWindow):
 	def _alpha_range_edited(self, pair_index, alpha_range):
 		if not 0 <= pair_index < len(self.image_entries):
 			return
+		self._record_history(coalesce=True)
 		self.image_entries[pair_index]["alpha_range"] = list(alpha_range)
 		self.save_autosave()
 
@@ -293,6 +388,7 @@ class MainApp(QMainWindow):
 			return
 		if field == "next_points" and image_index == len(self.image_entries) - 1:
 			return
+		self._record_history(coalesce=True)
 		entry = self.image_entries[image_index]
 		if field == "frame":
 			upper_left = value["upper_left"]
