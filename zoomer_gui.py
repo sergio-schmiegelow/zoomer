@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QKeySequence
-from PyQt6.QtWidgets import QApplication, QFileDialog, QMainWindow, QSplitter
+from PyQt6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox, QSplitter
 
 from widgets import (
 	VideoSettingsDialog,
@@ -40,6 +40,9 @@ class MainApp(QMainWindow):
 
 	def _create_menus(self):
 		file_menu = self.menuBar().addMenu("&File")
+		open_action = file_menu.addAction("Open...")
+		open_action.setShortcut(QKeySequence.StandardKey.Open)
+		open_action.triggered.connect(self.open_project)
 		save_action = file_menu.addAction("Save")
 		save_action.triggered.connect(self.save_project)
 		save_as_action = file_menu.addAction("Save as...")
@@ -66,6 +69,29 @@ class MainApp(QMainWindow):
 		self.frame_crosshair_action.setCheckable(True)
 		self.frame_crosshair_action.setChecked(True)
 		self.frame_crosshair_action.toggled.connect(self._set_frame_crosshair_enabled)
+
+	def open_project(self, _checked=False):
+		filename, _selected_filter = QFileDialog.getOpenFileName(
+			self, "Open project", self.project_filename,
+			"JSON files (*.json);;All files (*)",
+		)
+		if not filename:
+			return
+		try:
+			loaded = loadConfig(filename)
+		except Exception as error:
+			print(error)
+			QMessageBox.warning(self, "Open project", f"Unable to open {filename}:\n{error}")
+			return
+		self._undo_stack.clear()
+		self._redo_stack.clear()
+		self._edit_burst_timer.stop()
+		self.project_filename = filename
+		self.base_directory = Path(filename).resolve().parent
+		loaded.setdefault("images_data", [])
+		self._apply_restored_config(loaded)
+		if self._normalize_boundary_points():
+			self.save_autosave()
 
 	def save_project(self, _checked=False):
 		saveConfig(self.project_filename, self.configData)
