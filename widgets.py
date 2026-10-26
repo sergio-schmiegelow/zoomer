@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import cv2 as cv
-from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, QElapsedTimer, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QImage, QImageReader, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
 	QAbstractItemView,
@@ -1003,6 +1003,12 @@ class imageMarkersEditor(QWidget):
 		self._drag_point = None
 		self._last_mouse_position = QPointF()
 		self.frame_crosshair_enabled = True
+		self._marker_animation_clock = QElapsedTimer()
+		self._marker_animation_clock.start()
+		self._marker_animation_timer = QTimer(self)
+		self._marker_animation_timer.setInterval(16)
+		self._marker_animation_timer.timeout.connect(self.update)
+		self._marker_animation_timer.start()
 		self.setMinimumSize(480, 360)
 		self.setMouseTracking(True)
 		self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -1129,8 +1135,11 @@ class imageMarkersEditor(QWidget):
 		)
 		for point, color in zip(self.points, point_colors):
 			position = self.image_to_widget(point)
+			phase = self._marker_animation_clock.elapsed() % 1000
+			brightness = phase / 500 if phase < 500 else (1000 - phase) / 500
+			outline_color = QColor.fromRgbF(brightness, brightness, brightness)
 			for line_color, line_width, line_size in (
-				(QColor("black"), 3, CROSS_SIZE),
+				(outline_color, 3, CROSS_SIZE),
 				(color, 2, CROSS_SIZE - 2),
 			):
 				painter.setPen(QPen(line_color, line_width))
