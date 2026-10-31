@@ -297,10 +297,10 @@ def siftAlignment(img0, img1)->np.ndarray:
     sift = cv.SIFT_create()
 
     kp0, des0 = sift.detectAndCompute(img0, None)
-    kp2, des2 = sift.detectAndCompute(img1, None)
+    kp1, des1 = sift.detectAndCompute(img1, None)
 
     matcher = cv.BFMatcher()
-    matches = matcher.knnMatch(des0, des2, k=2)
+    matches = matcher.knnMatch(des0, des1, k=2)
     if len(matches) < 3:
         print("DEBUG - Not enough matches found.")
         return None, None
@@ -309,17 +309,47 @@ def siftAlignment(img0, img1)->np.ndarray:
     matches = sorted(matches, key=lambda x: x[0].distance)
 
     img0_first_point =  kp0[matches[0][0].queryIdx].pt
-    img1_first_point =  kp2[matches[0][0].trainIdx].pt
+    img1_first_point =  kp1[matches[0][0].trainIdx].pt
     img0_second_point = kp0[matches[1][0].queryIdx].pt
-    img1_second_point = kp2[matches[1][0].trainIdx].pt
+    img1_second_point = kp1[matches[1][0].trainIdx].pt
     img0_third_point =  kp0[matches[2][0].queryIdx].pt
-    img1_third_point =  kp2[matches[2][0].trainIdx].pt
+    img1_third_point =  kp1[matches[2][0].trainIdx].pt
 
     img0_next_points = np.array([img0_first_point, img0_second_point, img0_third_point], dtype=np.float32)
     img1_prev_points = np.array([img1_first_point, img1_second_point, img1_third_point], dtype=np.float32)
 
     return img0_next_points, img1_prev_points
 #-------------------------------------------------------------------------
+def orbAlignment(img0, img1)->np.ndarray:
+    # Perform ORB feature detection and matching between img0 and img1.
+    # Return the matched points for alignment or none if not enough matches are found.
+    orb = cv.ORB_create()
+
+    kp0, des0 = orb.detectAndCompute(img0, None)
+    kp1, des1 = orb.detectAndCompute(img1, None)
+
+    matcher = cv.DescriptorMatcher_create(cv.DESCRIPTOR_MATCHER_BRUTEFORCE_HAMMING)
+    matches = matcher.match(des0, des1, None)
+
+    if len(matches) < 3:
+        print("DEBUG - Not enough matches found.")
+        return None, None
+    print(f"DEBUG - Total matches found: {len(matches)}")
+    matches = sorted(matches, key=lambda x: x.distance)
+
+    img0_first_point =  kp0[matches[0].queryIdx].pt
+    img1_first_point =  kp1[matches[0].trainIdx].pt
+    img0_second_point = kp0[matches[1].queryIdx].pt
+    img1_second_point = kp1[matches[1].trainIdx].pt
+    img0_third_point =  kp0[matches[2].queryIdx].pt
+    img1_third_point =  kp1[matches[2].trainIdx].pt
+
+    img0_next_points = np.array([img0_first_point, img0_second_point, img0_third_point], dtype=np.float32)
+    img1_prev_points = np.array([img1_first_point, img1_second_point, img1_third_point], dtype=np.float32)
+
+    return img0_next_points, img1_prev_points
+#-------------------------------------------------------------------------
+
 def calculateZoomArray(configData:dict)->float:
     currentZoom = 1.0
     imgZooms = [1.0]
