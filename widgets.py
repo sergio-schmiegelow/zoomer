@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
 	QDoubleSpinBox,
 	QFileDialog,
 	QFormLayout,
+	QFrame,
 	QGridLayout,
 	QHBoxLayout,
 	QLabel,
@@ -621,12 +622,45 @@ class imageFilesAndPreviewArea(QSplitter):
 		self.setStretchFactor(1, 3)
 
 
+class _BusySpinner(QWidget):
+	def __init__(self, parent=None):
+		super().__init__(parent)
+		self._angle = 0
+		self.setFixedSize(22, 22)
+		self._timer = QTimer(self)
+		self._timer.setInterval(40)
+		self._timer.timeout.connect(self._advance)
+
+	def start(self):
+		self._timer.start()
+
+	def stop(self):
+		self._timer.stop()
+
+	def _advance(self):
+		self._angle = (self._angle + 30) % 360
+		self.update()
+
+	def paintEvent(self, _event):
+		painter = QPainter(self)
+		painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+		painter.translate(self.width() / 2, self.height() / 2)
+		painter.rotate(self._angle)
+		for spoke in range(12):
+			color = QColor("#ffe9a6")
+			color.setAlphaF((spoke + 1) / 12)
+			painter.setPen(QPen(color, 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+			painter.drawLine(QPointF(0, -6), QPointF(0, -10))
+			painter.rotate(30)
+
+
 class imageFusionEditor(QWidget):
 	imageEdited = pyqtSignal(int, str, object)
 	pairRequested = pyqtSignal(int)
 	fusionPreviewRequested = pyqtSignal(int, float, float)
 	alphaRangeEdited = pyqtSignal(int, object)
 	alignmentPointsRequested = pyqtSignal(int)
+	alignmentInterrupted = pyqtSignal()
 
 	def __init__(self, parent=None):
 		super().__init__(parent)
@@ -652,6 +686,25 @@ class imageFusionEditor(QWidget):
 		self.navigation.addStretch(1)
 		self.navigation.addWidget(self.next_button)
 		self.layout.addLayout(self.navigation)
+		self.alignment_banner = QFrame(self)
+		self.alignment_banner.setObjectName("alignmentBanner")
+		self.alignment_banner.setStyleSheet(
+			"QFrame#alignmentBanner { background-color: #3a3320; border: 1px solid #c9a227;"
+			"border-radius: 4px; } QFrame#alignmentBanner QLabel { color: #ffe9a6; }"
+		)
+		banner_layout = QHBoxLayout(self.alignment_banner)
+		banner_layout.setContentsMargins(8, 4, 8, 4)
+		self.alignment_spinner = _BusySpinner(self.alignment_banner)
+		self.alignment_banner_label = QLabel("Trying to find alignment points. It can take a while...")
+		self.alignment_interrupt_button = QPushButton("Interrupt")
+		banner_layout.addWidget(self.alignment_spinner)
+		banner_layout.addWidget(self.alignment_banner_label, 1)
+		banner_layout.addWidget(self.alignment_interrupt_button)
+		self.alignment_banner.hide()
+		self.layout.addWidget(self.alignment_banner)
+		self.alignment_interrupt_button.clicked.connect(
+			lambda _checked=False: self.alignmentInterrupted.emit()
+		)
 		self.pair_splitter = QSplitter(Qt.Orientation.Horizontal, self)
 		self.layout.addWidget(self.pair_splitter, 1)
 		self.fusion_controls = QWidget(self)
@@ -718,6 +771,18 @@ class imageFusionEditor(QWidget):
 
 	def refresh_fusion_preview(self):
 		self._emit_fusion_preview_request()
+
+	def set_alignment_running(self, running):
+		self.alignment_banner.setVisible(running)
+		if running:
+			self.alignment_spinner.start()
+		else:
+			self.alignment_spinner.stop()
+		self.find_alignment_button.setEnabled(not running and len(self.image_entries) > 1)
+		self.previous_button.setEnabled(not running and self.pair_index > 0)
+		self.next_button.setEnabled(
+			not running and self.pair_index < len(self.image_entries) - 2
+		)
 
 	def set_pair(self, image_entries, image_paths, pair_index):
 		self.image_entries = image_entries

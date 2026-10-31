@@ -6,7 +6,7 @@ import random
 from collections import deque
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QThread, Qt, QTimer
 from PyQt6.QtGui import QKeySequence
 from PyQt6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox, QSplitter
 
@@ -24,6 +24,21 @@ from zoomer_backend import (
 )
 
 HISTORY_LIMIT = 10
+
+
+class _AlignmentJob(QThread):
+	def __init__(self, config_data, parent=None):
+		super().__init__(parent)
+		self.config_data = config_data
+		self.aligned = False
+		self.error = None
+		self.cancelled = False
+
+	def run(self):
+		try:
+			self.aligned = bool(autoAlignImages(self.config_data, 0))
+		except Exception as error:
+			self.error = error
 APP_CONFIG_DEFAULTS = {
 	"frame_crosshair": True,
 	"auto_open_last_project": False,
@@ -46,6 +61,8 @@ class MainApp(QMainWindow):
 		self.app_config = {**APP_CONFIG_DEFAULTS, **(app_config or {})}
 		self.export_filename = ""
 		self.image_entries = []
+		self._alignment_job = None
+		self._alignment_jobs = set()
 		self._undo_stack = deque(maxlen=HISTORY_LIMIT)
 		self._redo_stack = deque(maxlen=HISTORY_LIMIT)
 		# Drags emit many edits; one burst becomes a single history entry.
@@ -233,6 +250,7 @@ class MainApp(QMainWindow):
 		self.image_fusion_editor.alignmentPointsRequested.connect(
 			self._run_auto_alignment
 		)
+		self.image_fusion_editor.alignmentInterrupted.connect(self._interrupt_alignment)
 		self._fusion_preview_timer = QTimer(self)
 		self._fusion_preview_timer.setSingleShot(True)
 		self._fusion_preview_timer.setInterval(75)
@@ -252,25 +270,54 @@ class MainApp(QMainWindow):
 			self.image_fusion_editor.set_frame_crosshair_enabled(enabled)
 
 	def _run_auto_alignment(self, index):
-		if not 0 <= index < len(self.image_entries) - 1:
+		if self._alignment_job is not None or not 0 <= index < len(self.image_entries) - 1:
 			return
-		self._edit_burst_timer.stop()
-		self._record_history()
-		try:
-			aligned = autoAlignImages(self.configData, index)
-		except Exception as error:
-			print(error)
-			aligned = False
-		if not aligned:
-			self._undo_stack.pop()
+		entries = (self.image_entries[index], self.image_entries[index + 1])
+		# The worker edits private copies so the live project changes only on success.
+		job = _AlignmentJob({
+			"video_data": self.video_settings,
+			"images_data": [dict(entry) for entry in entries],
+		}, self)
+		job.index = index
+		job.entries = entries
+		job.finished.connect(lambda: self._alignment_finished(job))
+		self._alignment_job = job
+		self._alignment_jobs.add(job)
+		self.image_fusion_editor.set_alignment_running(True)
+		job.start()
+
+	def _interrupt_alignment(self):
+		# SIFT cannot be stopped mid-call; the thread finishes in the background and its result is dropped.
+		if self._alignment_job is not None:
+			self._alignment_job.cancelled = True
+			self._alignment_job = None
+		self.image_fusion_editor.set_alignment_running(False)
+
+	def _alignment_finished(self, job):
+		self._alignment_jobs.discard(job)
+		if job.cancelled:
+			job.deleteLater()
+			return
+		self._alignment_job = None
+		self.image_fusion_editor.set_alignment_running(False)
+		index = job.index
+		current = self.image_entries[index:index + 2]
+		still_valid = len(current) == 2 and all(a is b for a, b in zip(current, job.entries))
+		if job.error is not None:
+			print(job.error)
+		if not job.aligned:
 			QMessageBox.warning(self, "Find alignment points", "Unable to find alignment points.")
-			return
-		for offset, field in ((0, "next_points"), (1, "prev_points")):
-			points = self.image_entries[index + offset][field]
-			self.image_entries[index + offset][field] = [[float(x), float(y)] for x, y in points]
-		self._normalize_boundary_points()
-		self.save_autosave()
-		self._show_pair(index)
+		elif still_valid:
+			self._edit_burst_timer.stop()
+			self._record_history()
+			results = job.config_data["images_data"]
+			for offset, field in ((0, "next_points"), (1, "prev_points")):
+				points = results[offset][field]
+				self.image_entries[index + offset][field] = [[float(x), float(y)] for x, y in points]
+			self._normalize_boundary_points()
+			self.save_autosave()
+			self._show_pair(index)
+		job.deleteLater()
 
 	@staticmethod
 	def _image_path(image_entry):
