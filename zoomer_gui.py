@@ -15,7 +15,13 @@ from widgets import (
 	imageFilesAndPreviewArea,
 	imageFusionEditionArea,
 )
-from zoomer_backend import imageClass, loadConfig, saveConfig, createBlendedFrame
+from zoomer_backend import (
+    imageClass, 
+    loadConfig, 
+    saveConfig, 
+    createBlendedFrame,
+    siftAlignment
+)
 
 HISTORY_LIMIT = 10
 APP_CONFIG_DEFAULTS = {
@@ -224,6 +230,9 @@ class MainApp(QMainWindow):
 		self.image_fusion_editor.imageEdited.connect(self._image_edited)
 		self.image_fusion_editor.fusionPreviewRequested.connect(self._update_fusion_preview)
 		self.image_fusion_editor.alphaRangeEdited.connect(self._alpha_range_edited)
+		self.image_fusion_editor.alignmentPointsRequested.connect(
+			self._run_sift_alignment
+		)
 		self._fusion_preview_timer = QTimer(self)
 		self._fusion_preview_timer.setSingleShot(True)
 		self._fusion_preview_timer.setInterval(75)
@@ -241,6 +250,27 @@ class MainApp(QMainWindow):
 		self._save_app_config()
 		if hasattr(self, "image_fusion_editor"):
 			self.image_fusion_editor.set_frame_crosshair_enabled(enabled)
+
+	def _run_sift_alignment(self, index):
+		if not 0 <= index < len(self.image_entries) - 1:
+			return
+		self._edit_burst_timer.stop()
+		self._record_history()
+		try:
+			aligned = siftAlignment(self.configData, index)
+		except Exception as error:
+			print(error)
+			aligned = False
+		if not aligned:
+			self._undo_stack.pop()
+			QMessageBox.warning(self, "Find alignment points", "Unable to find alignment points.")
+			return
+		for offset, field in ((0, "next_points"), (1, "prev_points")):
+			points = self.image_entries[index + offset][field]
+			self.image_entries[index + offset][field] = [[float(x), float(y)] for x, y in points]
+		self._normalize_boundary_points()
+		self.save_autosave()
+		self._show_pair(index)
 
 	@staticmethod
 	def _image_path(image_entry):

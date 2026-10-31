@@ -1,5 +1,6 @@
 import cv2 as cv
 import numpy as np
+from scipy.optimize import minimize, OptimizeResult, shgo, least_squares
 import json
 from pathlib import Path
 
@@ -232,9 +233,107 @@ def createBlendedFrame(configData:dict, index:int, sizeAlpha:float, blendAlpha:f
     
     intermediateFrame0 = createIntermediateFrame(videoSize, imgPrev, prevNextPoints, framePrev, nextPrevPoints, frameNext, sizeAlpha,  interpolationMethod=interpolationMethod)
     intermediateFrame1 = createIntermediateFrame(videoSize, imgNext, nextPrevPoints, frameNext, prevNextPoints, framePrev, 1-sizeAlpha, interpolationMethod=interpolationMethod )
+    print(f'DEBUG - frames correlation: {calculateFramesCorrelation(intermediateFrame0, intermediateFrame1)}')
     #Blend the two intermediate frames
     blendedFrame = cv.addWeighted(intermediateFrame0, 1-blendAlpha, intermediateFrame1, blendAlpha, 0)
     return blendedFrame
+#-------------------------------------------------------------------------
+def calculateFramesCorrelation(frame0:np.ndarray, frame1:np.ndarray)->float:
+    redCorrelation =   np.corrcoef(frame0[:,:,0].flatten(), frame1[:,:,0].flatten())[0,1]
+    greenCorrelation = np.corrcoef(frame0[:,:,1].flatten(), frame1[:,:,1].flatten())[0,1]
+    blueCorrelation =  np.corrcoef(frame0[:,:,2].flatten(), frame1[:,:,2].flatten())[0,1]
+    correlation = (redCorrelation + greenCorrelation + blueCorrelation) / 3
+    print(f'DEBUG - correlation: {correlation}')
+    return correlation
+#-------------------------------------------------------------------------
+def costFunctionNext(flattenedPoints, img0Data, img1Data, videoSize, sizeAlpha, interpolationMethod, direction)->float:
+    x0, y0, x1, y1, x2, y2 = flattenedPoints
+    points = np.array([[x0, y0], [x1, y1], [x2, y2]], dtype=np.float32)
+    print(f'DEBUG - points: \n{points}')
+    imgPrev, prevNextPoints, framePrev, nextPrevPoints, frameNext = img0Data
+    imgNext, nextPrevPoints, frameNext, prevNextPoints, framePrev = img1Data
+    if direction == 'next':
+        prevNextPoints = points
+    else:
+        nextPrevPoints = points
+    intermediateFrame0 = createIntermediateFrame(videoSize, imgPrev, prevNextPoints, framePrev, nextPrevPoints, frameNext, sizeAlpha,  interpolationMethod=interpolationMethod)
+    intermediateFrame1 = createIntermediateFrame(videoSize, imgNext, nextPrevPoints, frameNext, prevNextPoints, framePrev, 1-sizeAlpha, interpolationMethod=interpolationMethod)
+    return -calculateFramesCorrelation(intermediateFrame0, intermediateFrame1)
+#-------------------------------------------------------------------------
+def pointsFineAdjustment(configData:dict, index:int, direction:str, sizeAlpha:float)->np.ndarray:
+    # This function adjusts the points by maximizing the correlation in between the generated frames.
+    if direction == 'next':
+        idx0, idx1 = index,    index + 1
+    else:
+        idx0, idx1 = index -1, index
+
+    videoSize = np.array(configData['video_data']['size'], dtype=np.int32)
+    interpolationMethod = configData['video_data']['interpolation_method']
+        
+    imgPrev =                 configData['images_data'][idx0]['image'].getCvImage()
+    framePrev  =     np.array(configData['images_data'][idx0]['frame'], dtype=np.float32)
+    prevNextPoints = np.array(configData['images_data'][idx0]['next_points'], dtype=np.float32)
+
+    imgNext =                 configData['images_data'][idx1]['image'].getCvImage()
+    frameNext  =     np.array(configData['images_data'][idx1]['frame'], dtype=np.float32)
+    nextPrevPoints = np.array(configData['images_data'][idx1]['prev_points'], dtype=np.float32)
+
+    img0Data = (imgPrev, prevNextPoints, framePrev, nextPrevPoints, frameNext)
+    img1Data = (imgNext, nextPrevPoints, frameNext, prevNextPoints, framePrev)
+
+    if direction == 'next':
+        adjustablePoints = prevNextPoints
+    else:
+        adjustablePoints = nextPrevPoints
+
+    flattenedPoints = np.array([adjustablePoints[0,0], adjustablePoints[0,1],
+                                adjustablePoints[1,0], adjustablePoints[1,1],
+                                adjustablePoints[2,0], adjustablePoints[2,1]], dtype=np.float64)
+    bounds = np.array([[0, imgPrev.shape[1]], [0, imgPrev.shape[0]],
+                       [0, imgPrev.shape[1]], [0, imgPrev.shape[0]],
+                       [0, imgPrev.shape[1]], [0, imgPrev.shape[0]]], dtype=np.float64)
+    print(f"DEBUG - Bounds: \n{bounds}")
+
+    result = least_squares(costFunctionNext, flattenedPoints, bounds=bounds, args=(img0Data, img1Data, videoSize, sizeAlpha, interpolationMethod, direction))
+    #result = minimize(costFunctionNext, flattenedPoints, method='least_squares', bounds=bounds, args=(img0Data, img1Data, videoSize, sizeAlpha, interpolationMethod, direction))
+    adjustedPoints = np.array([[result.x[0], result.x[1]], [result.x[2], result.x[3]], [result.x[4], result.x[5]]], dtype=np.float32)
+
+    print("Adjusted points:", adjustedPoints)
+    return adjustedPoints
+#-------------------------------------------------------------------------
+def siftAlignment(configData:dict, index:int)->np.ndarray:
+    # Perform SIFT alignment for the image at the given index in the configData.
+    # Returns the aligned points as a numpy array of shape (3, 2).
+    img1 = configData['images_data'][index]['image'].getCvImage()
+    img2 = configData['images_data'][index + 1]['image'].getCvImage()
+    sift = cv.SIFT_create()
+
+    kp1, des1 = sift.detectAndCompute(img1, None)
+    kp2, des2 = sift.detectAndCompute(img2, None)
+
+    matcher = cv.BFMatcher()
+    matches = matcher.knnMatch(des1, des2, k=2)
+    if len(matches) < 3:
+        print("DEBUG - Not enough matches found.")
+        return False
+    print(f"DEBUG - Total matches found: {len(matches)}")
+    # Sort matches based on distance, best matches first
+    matches = sorted(matches, key=lambda x: x[0].distance)
+
+    img1_first_point =  kp1[matches[0][0].queryIdx].pt
+    img2_first_point =  kp2[matches[0][0].trainIdx].pt
+    img1_second_point = kp1[matches[1][0].queryIdx].pt
+    img2_second_point = kp2[matches[1][0].trainIdx].pt
+    img1_third_point =  kp1[matches[2][0].queryIdx].pt
+    img2_third_point =  kp2[matches[2][0].trainIdx].pt
+
+    img1_next_points = np.array([img1_first_point, img1_second_point, img1_third_point], dtype=np.float32)
+    img2_next_points = np.array([img2_first_point, img2_second_point, img2_third_point], dtype=np.float32)
+    
+    configData['images_data'][index]['next_points'] = img1_next_points
+    configData['images_data'][index + 1]['prev_points'] = img2_next_points
+    return True
+   
 #-------------------------------------------------------------------------
 def calculateZoomArray(configData:dict)->float:
     currentZoom = 1.0
@@ -302,10 +401,11 @@ def generateVideo(configData:dict, filename:str):
 
 
 if __name__ == "__main__": 
-    cfgFile = 'autosave.json'
+    cfgFile = 'novoprojeto.zmr'
     cfgDict = loadConfig(cfgFile)
-    generateVideo(cfgDict, "output.avi")
+    siftAlignment(cfgDict, 0)
     quit()
+    generateVideo(cfgDict, "output.avi")
 
 
 

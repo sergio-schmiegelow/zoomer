@@ -83,6 +83,25 @@ def _zoom_frame_icon():
 	return QIcon(icon_image)
 
 
+def _points_fine_adjustment_icon():
+	icon_image = QPixmap(24, 24)
+	icon_image.fill(Qt.GlobalColor.transparent)
+	painter = QPainter(icon_image)
+	painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+	for center, color, width, size in (
+		(QPointF(15, 15), QColor(170, 205, 200, 105), 2, 7),
+		(QPointF(10, 10), QColor("#071b1a"), 4, 8),
+		(QPointF(10, 10), QColor("#f4ffff"), 2, 8),
+	):
+		painter.setPen(QPen(color, width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.SquareCap))
+		painter.drawLine(QPointF(center.x() - size / 2, center.y()),
+			QPointF(center.x() + size / 2, center.y()))
+		painter.drawLine(QPointF(center.x(), center.y() - size / 2),
+			QPointF(center.x(), center.y() + size / 2))
+	painter.end()
+	return QIcon(icon_image)
+
+
 def load_oriented_image(image_object):
 	if hasattr(image_object, "getCvImage") and hasattr(image_object, "setQtImage"):
 		qt_image = image_object.getQtImage()
@@ -607,6 +626,7 @@ class imageFusionEditor(QWidget):
 	pairRequested = pyqtSignal(int)
 	fusionPreviewRequested = pyqtSignal(int, float, float)
 	alphaRangeEdited = pyqtSignal(int, object)
+	alignmentPointsRequested = pyqtSignal(int)
 
 	def __init__(self, parent=None):
 		super().__init__(parent)
@@ -620,9 +640,15 @@ class imageFusionEditor(QWidget):
 		self.previous_button = QPushButton("Previous pair")
 		self.pair_label = QLabel()
 		self.next_button = QPushButton("Next pair")
+		self.find_alignment_button = QPushButton(
+			_points_fine_adjustment_icon(), "Find alignment points"
+		)
+		self.find_alignment_button.setObjectName("findAlignmentPoints")
+		self.find_alignment_button.setEnabled(False)
 		self.navigation.addWidget(self.previous_button)
 		self.navigation.addStretch(1)
 		self.navigation.addWidget(self.pair_label)
+		self.navigation.addWidget(self.find_alignment_button)
 		self.navigation.addStretch(1)
 		self.navigation.addWidget(self.next_button)
 		self.layout.addLayout(self.navigation)
@@ -657,6 +683,9 @@ class imageFusionEditor(QWidget):
 		self.layout.addWidget(self.fusion_controls)
 		self.previous_button.clicked.connect(self._previous_pair)
 		self.next_button.clicked.connect(self._next_pair)
+		self.find_alignment_button.clicked.connect(
+			lambda _checked=False: self.alignmentPointsRequested.emit(self.pair_index)
+		)
 		self.fusion_step_slider.valueChanged.connect(self._fusion_step_changed)
 		self.alpha_range_slider.rangeChanged.connect(self._alpha_range_changed)
 		self.set_pair([], [], 0)
@@ -704,6 +733,7 @@ class imageFusionEditor(QWidget):
 			self.pair_label.setText("Add at least two images to edit a pair")
 			self.previous_button.setEnabled(False)
 			self.next_button.setEnabled(False)
+			self.find_alignment_button.setEnabled(False)
 			self.fusion_step_slider.setEnabled(False)
 			self.alpha_range_slider.setEnabled(False)
 			return
@@ -722,6 +752,7 @@ class imageFusionEditor(QWidget):
 		self.pair_label.setText(f"Pair {self.pair_index + 1} / {pair_count}")
 		self.previous_button.setEnabled(self.pair_index > 0)
 		self.next_button.setEnabled(self.pair_index < pair_count - 1)
+		self.find_alignment_button.setEnabled(True)
 		for offset, points_field in ((0, "next_points"), (1, "prev_points")):
 			entry_index = self.pair_index + offset
 			entry = image_entries[entry_index]
@@ -830,6 +861,16 @@ class imageFusionEditor(QWidget):
 			column = self.pair_splitter.widget(index)
 			column.editor.frame_crosshair_enabled = self.frame_crosshair_enabled
 			column.editor.update()
+
+	def set_editor_points(self, image_index, points_field, points):
+		column_index = image_index - self.pair_index
+		if not 0 <= column_index < self.pair_splitter.count():
+			return False
+		expected_field = "next_points" if column_index == 0 else "prev_points"
+		if points_field != expected_field:
+			return False
+		self.pair_splitter.widget(column_index).editor.set_points(points)
+		return True
 
 	def _previous_pair(self):
 		if self.pair_index > 0:
@@ -1024,6 +1065,12 @@ class imageMarkersEditor(QWidget):
 	@property
 	def frame_height(self):
 		return self.frame_width / self.frame_aspect_ratio
+
+	def set_points(self, points):
+		if len(points) != 3:
+			raise ValueError("Exactly three points are required")
+		self.points = [QPointF(float(point[0]), float(point[1])) for point in points]
+		self.update()
 
 	def image_to_widget(self, point):
 		return QPointF(point.x() * self.scale + self.pan.x(), point.y() * self.scale + self.pan.y())
