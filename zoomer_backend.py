@@ -270,8 +270,8 @@ def calculateFramesCorrelation(frame0:np.ndarray, frame1:np.ndarray)->float:
     print(f'DEBUG - correlation: {correlation}')
     return correlation
 #-------------------------------------------------------------------------
-def siftAlignment(configData:dict, index:int, useOnlyFrame = True)->np.ndarray:
-    # Perform SIFT alignment for the image at the given index in the configData.
+def autoAlignImages(configData:dict, index:int, useOnlyFrame = True)->np.ndarray:
+    # Perform alignment for the image at the given index in the configData.
     # Returns the aligned points as a numpy array of shape (3, 2).
     img0 = configData['images_data'][index    ]['image'].getCvImage()
     img1 = configData['images_data'][index + 1]['image'].getCvImage()
@@ -281,6 +281,19 @@ def siftAlignment(configData:dict, index:int, useOnlyFrame = True)->np.ndarray:
         frame1 = configData['images_data'][index + 1]['frame']
         img0 = extractVideoFrameFromImage(img0, frame0, videoDims)
         img1 = extractVideoFrameFromImage(img1, frame1, videoDims)
+    
+    img0_next_points, img1_prev_points = siftAlignment(img0, img1)
+        
+    if useOnlyFrame:
+        img0_next_points = convertVideoPointsToImageDimensions(img0_next_points, frame0, videoDims)
+        img1_prev_points = convertVideoPointsToImageDimensions(img1_prev_points, frame1, videoDims)
+    configData['images_data'][index]['next_points'] = img0_next_points
+    configData['images_data'][index + 1]['prev_points'] = img1_prev_points
+    return True
+#-------------------------------------------------------------------------
+def siftAlignment(img0, img1)->np.ndarray:
+    #Perform SIFT feature detection and matching between img0 and img1.
+    #Return the matched points for alignment or none if not enough matches are found.
     sift = cv.SIFT_create()
 
     kp0, des0 = sift.detectAndCompute(img0, None)
@@ -290,7 +303,7 @@ def siftAlignment(configData:dict, index:int, useOnlyFrame = True)->np.ndarray:
     matches = matcher.knnMatch(des0, des2, k=2)
     if len(matches) < 3:
         print("DEBUG - Not enough matches found.")
-        return False
+        return None, None
     print(f"DEBUG - Total matches found: {len(matches)}")
     # Sort matches based on distance, best matches first
     matches = sorted(matches, key=lambda x: x[0].distance)
@@ -303,15 +316,9 @@ def siftAlignment(configData:dict, index:int, useOnlyFrame = True)->np.ndarray:
     img1_third_point =  kp2[matches[2][0].trainIdx].pt
 
     img0_next_points = np.array([img0_first_point, img0_second_point, img0_third_point], dtype=np.float32)
-    img1_next_points = np.array([img1_first_point, img1_second_point, img1_third_point], dtype=np.float32)
+    img1_prev_points = np.array([img1_first_point, img1_second_point, img1_third_point], dtype=np.float32)
 
-    if useOnlyFrame:
-        img0_next_points = convertVideoPointsToImageDimensions(img0_next_points, frame0, videoDims)
-        img1_next_points = convertVideoPointsToImageDimensions(img1_next_points, frame1, videoDims)
-    configData['images_data'][index]['next_points'] = img0_next_points
-    configData['images_data'][index + 1]['prev_points'] = img1_next_points
-    return True
-   
+    return img0_next_points, img1_prev_points
 #-------------------------------------------------------------------------
 def calculateZoomArray(configData:dict)->float:
     currentZoom = 1.0

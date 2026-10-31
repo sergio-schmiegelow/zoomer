@@ -20,7 +20,7 @@ from zoomer_backend import (
     loadConfig, 
     saveConfig, 
     createBlendedFrame,
-    siftAlignment
+    autoAlignImages
 )
 
 HISTORY_LIMIT = 10
@@ -231,7 +231,7 @@ class MainApp(QMainWindow):
 		self.image_fusion_editor.fusionPreviewRequested.connect(self._update_fusion_preview)
 		self.image_fusion_editor.alphaRangeEdited.connect(self._alpha_range_edited)
 		self.image_fusion_editor.alignmentPointsRequested.connect(
-			self._run_sift_alignment
+			self._run_auto_alignment
 		)
 		self._fusion_preview_timer = QTimer(self)
 		self._fusion_preview_timer.setSingleShot(True)
@@ -251,13 +251,13 @@ class MainApp(QMainWindow):
 		if hasattr(self, "image_fusion_editor"):
 			self.image_fusion_editor.set_frame_crosshair_enabled(enabled)
 
-	def _run_sift_alignment(self, index):
+	def _run_auto_alignment(self, index):
 		if not 0 <= index < len(self.image_entries) - 1:
 			return
 		self._edit_burst_timer.stop()
 		self._record_history()
 		try:
-			aligned = siftAlignment(self.configData, index)
+			aligned = autoAlignImages(self.configData, index)
 		except Exception as error:
 			print(error)
 			aligned = False
