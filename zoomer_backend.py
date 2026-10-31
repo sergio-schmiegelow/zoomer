@@ -133,7 +133,7 @@ def generateImageWithMarkers(img:np.ndarray, frame, prevPoints: np.ndarray, next
     cv.polylines(img, [framePoints], isClosed=True, color=FRAME_COLOR, thickness=FRAME_THICKNESS)
     return img
 #-------------------------------------------------------------------------
-def convertPointsToVideoDimensions(points:np.ndarray, frame:np.ndarray, videoDims:np.ndarray)->np.ndarray:
+def convertImgPointsToVideoDimensions(points:np.ndarray, frame:np.ndarray, videoDims:np.ndarray)->np.ndarray:
     # Convert points from the source frame to the destination frame using an affine transformation.
     frameAffinePoints = np.array([frame[0], 
                                  [frame[1][0], frame[0][1]], 
@@ -144,6 +144,30 @@ def convertPointsToVideoDimensions(points:np.ndarray, frame:np.ndarray, videoDim
     transformMatrix = cv.getAffineTransform(frameAffinePoints, videoDimsAffinePoints)
     transformedPoints = cv.transform(np.array([points], dtype=np.float32), transformMatrix)
     return transformedPoints[0]
+#-------------------------------------------------------------------------
+def convertVideoPointsToImageDimensions(points:np.ndarray, frame:np.ndarray, videoDims:np.ndarray)->np.ndarray:
+    # Convert points from the video frame to the source image frame using an affine transformation.
+    videoDimsAffinePoints = np.array([[0, 0], 
+                                      [videoDims[0], 0], 
+                                      videoDims], dtype=np.float32)
+    frameAffinePoints = np.array([frame[0], 
+                                 [frame[1][0], frame[0][1]], 
+                                 frame[1]], dtype=np.float32)
+    transformMatrix = cv.getAffineTransform(videoDimsAffinePoints, frameAffinePoints)
+    transformedPoints = cv.transform(np.array([points], dtype=np.float32), transformMatrix)
+    return transformedPoints[0]
+#-------------------------------------------------------------------------
+def extractVideoFrameFromImage(img:np.ndarray, frame:np.ndarray, videoDims:np.ndarray)->np.ndarray:
+    # Extract the video frame from the source image using an affine transformation.
+    videoDimsAffinePoints = np.array([[0, 0], 
+                                      [videoDims[0], 0], 
+                                      videoDims], dtype=np.float32)
+    frameAffinePoints = np.array([frame[0], 
+                                 [frame[1][0], frame[0][1]], 
+                                 frame[1]], dtype=np.float32)
+    transformMatrix = cv.getAffineTransform(frameAffinePoints, videoDimsAffinePoints)
+    videoFrame = cv.warpAffine(img, transformMatrix, (videoDims[0], videoDims[1]))
+    return videoFrame
 #-------------------------------------------------------------------------
 def interpolatePoints(points0:np.ndarray, points1:np.ndarray, alpha:float)->np.ndarray:
     # Interpolate between two sets of points based on the alpha value.
@@ -190,9 +214,9 @@ def createIntermediateFrame(videoSize:np.ndarray,
                             sizeAlpha:float, checkFill:bool=False,
                             interpolationMethod:str='log')->np.ndarray:
     #Convert the points0 to frame0 coordinates
-    videoTransformedPoints0 = convertPointsToVideoDimensions(points0, frame0, videoSize)
+    videoTransformedPoints0 = convertImgPointsToVideoDimensions(points0, frame0, videoSize)
     #Convert the points1 to frame1 coordinates
-    videoTransformedPoints1 = convertPointsToVideoDimensions(points1, frame1, videoSize)
+    videoTransformedPoints1 = convertImgPointsToVideoDimensions(points1, frame1, videoSize)
     #Interpolate the points between the two frames
     interpolatedPoints = interpolatePoints(videoTransformedPoints0, videoTransformedPoints1, sizeAlpha, interpolationMethod)
     #Create an affine transformer for the first image
@@ -246,18 +270,24 @@ def calculateFramesCorrelation(frame0:np.ndarray, frame1:np.ndarray)->float:
     print(f'DEBUG - correlation: {correlation}')
     return correlation
 #-------------------------------------------------------------------------
-def siftAlignment(configData:dict, index:int)->np.ndarray:
+def siftAlignment(configData:dict, index:int, useOnlyFrame = True)->np.ndarray:
     # Perform SIFT alignment for the image at the given index in the configData.
     # Returns the aligned points as a numpy array of shape (3, 2).
-    img1 = configData['images_data'][index]['image'].getCvImage()
-    img2 = configData['images_data'][index + 1]['image'].getCvImage()
+    img0 = configData['images_data'][index    ]['image'].getCvImage()
+    img1 = configData['images_data'][index + 1]['image'].getCvImage()
+    if useOnlyFrame:
+        videoDims = configData['video_data']['size']
+        frame0 = configData['images_data'][index    ]['frame']
+        frame1 = configData['images_data'][index + 1]['frame']
+        img0 = extractVideoFrameFromImage(img0, frame0, videoDims)
+        img1 = extractVideoFrameFromImage(img1, frame1, videoDims)
     sift = cv.SIFT_create()
 
-    kp1, des1 = sift.detectAndCompute(img1, None)
-    kp2, des2 = sift.detectAndCompute(img2, None)
+    kp0, des0 = sift.detectAndCompute(img0, None)
+    kp2, des2 = sift.detectAndCompute(img1, None)
 
     matcher = cv.BFMatcher()
-    matches = matcher.knnMatch(des1, des2, k=2)
+    matches = matcher.knnMatch(des0, des2, k=2)
     if len(matches) < 3:
         print("DEBUG - Not enough matches found.")
         return False
@@ -265,18 +295,21 @@ def siftAlignment(configData:dict, index:int)->np.ndarray:
     # Sort matches based on distance, best matches first
     matches = sorted(matches, key=lambda x: x[0].distance)
 
-    img1_first_point =  kp1[matches[0][0].queryIdx].pt
-    img2_first_point =  kp2[matches[0][0].trainIdx].pt
-    img1_second_point = kp1[matches[1][0].queryIdx].pt
-    img2_second_point = kp2[matches[1][0].trainIdx].pt
-    img1_third_point =  kp1[matches[2][0].queryIdx].pt
-    img2_third_point =  kp2[matches[2][0].trainIdx].pt
+    img0_first_point =  kp0[matches[0][0].queryIdx].pt
+    img1_first_point =  kp2[matches[0][0].trainIdx].pt
+    img0_second_point = kp0[matches[1][0].queryIdx].pt
+    img1_second_point = kp2[matches[1][0].trainIdx].pt
+    img0_third_point =  kp0[matches[2][0].queryIdx].pt
+    img1_third_point =  kp2[matches[2][0].trainIdx].pt
 
+    img0_next_points = np.array([img0_first_point, img0_second_point, img0_third_point], dtype=np.float32)
     img1_next_points = np.array([img1_first_point, img1_second_point, img1_third_point], dtype=np.float32)
-    img2_next_points = np.array([img2_first_point, img2_second_point, img2_third_point], dtype=np.float32)
-    
-    configData['images_data'][index]['next_points'] = img1_next_points
-    configData['images_data'][index + 1]['prev_points'] = img2_next_points
+
+    if useOnlyFrame:
+        img0_next_points = convertVideoPointsToImageDimensions(img0_next_points, frame0, videoDims)
+        img1_next_points = convertVideoPointsToImageDimensions(img1_next_points, frame1, videoDims)
+    configData['images_data'][index]['next_points'] = img0_next_points
+    configData['images_data'][index + 1]['prev_points'] = img1_next_points
     return True
    
 #-------------------------------------------------------------------------
@@ -293,8 +326,8 @@ def calculateZoomArray(configData:dict)->float:
         frame1 = np.array(configData['images_data'][i + 1]['frame'], dtype=np.float32)
         prevPoints1 = np.array(configData['images_data'][i + 1]['prev_points'], dtype=np.float32)
 
-        convertedPoints0 = convertPointsToVideoDimensions(nextPoints0, frame0, videoDims)
-        convertedPoints1 = convertPointsToVideoDimensions(prevPoints1, frame1, videoDims)
+        convertedPoints0 = convertImgPointsToVideoDimensions(nextPoints0, frame0, videoDims)
+        convertedPoints1 = convertImgPointsToVideoDimensions(prevPoints1, frame1, videoDims)
 
         pairRatio = pointsMeanSizeRatio(convertedPoints0, convertedPoints1)
         currentZoom *= pairRatio
@@ -386,7 +419,7 @@ if __name__ == "__main__":
     quit()
     
     #Convert the second image's previous points to the video dimensions using an affine transformation
-    videoTransformedPrevPoints1 = convertPointsToVideoDimensions(prevPoints1, frame1, videoDims)
+    videoTransformedPrevPoints1 = convertImgPointsToVideoDimensions(prevPoints1, frame1, videoDims)
     
     img0FrameTransformer = affineTransformerClass(nextPoints0, videoTransformedPrevPoints1)
     
