@@ -3,6 +3,7 @@ import numpy as np
 from scipy.optimize import minimize, OptimizeResult, shgo, least_squares
 import json
 from pathlib import Path
+import time
 
 NUM_FRAMES = 100
 CROSS_SIZE = 10
@@ -349,8 +350,7 @@ def orbAlignment(img0, img1)->np.ndarray:
 
     return img0_next_points, img1_prev_points
 #-------------------------------------------------------------------------
-
-def calculateZoomArray(configData:dict)->float:
+def calculateZoomArray(configData:dict)->tuple:
     currentZoom = 1.0
     imgZooms = [1.0]
     videoDims = np.array(configData['video_data']['size'], dtype=np.int32)
@@ -371,12 +371,19 @@ def calculateZoomArray(configData:dict)->float:
         imgZooms.append(currentZoom)
         print(f"DEBUG - Pair ratio for images {i} and {i+1}: {pairRatio}")
         print(f"Zoom for image {i}:{currentZoom}")
+    #if imgZooms is not an increase sequence, return error
+    if not np.all(np.diff(imgZooms) >= 0):
+        errorMsg = "Image zooms are not in increasing order"
+        print(f"ERROR - {errorMsg}")
+        return None, errorMsg
     imgZooms = np.array(imgZooms)
     print("Image zooms:", imgZooms)
-    return imgZooms
+    return imgZooms, None
 #-------------------------------------------------------------------------
-def calculateFramesFusionAndSizeAlpha(configData:dict)->float:
-    zoomArray = calculateZoomArray(configData)
+def calculateFramesFusionAndSizeAlpha(configData:dict):
+    zoomArray, errorMsg = calculateZoomArray(configData)
+    if errorMsg is not None:
+        return None, errorMsg
     logZoomArray = np.log(zoomArray)
     totalFrames = int(configData['video_data']['FPS'] * configData['video_data']['duration'])
     framesLogsZooms = np.linspace(0, logZoomArray[-1], num=totalFrames)
@@ -390,38 +397,63 @@ def calculateFramesFusionAndSizeAlpha(configData:dict)->float:
         firstIndex = np.searchsorted(logZoomArray, frameLogZoom, side='left') - 1
         step = (frameLogZoom - logZoomArray[firstIndex]) / (logZoomArray[firstIndex + 1] - logZoomArray[firstIndex])
         indexesStepsList.append((firstIndex, step))
-    return indexesStepsList
+    return indexesStepsList, None
 #-------------------------------------------------------------------------
-def generateVideo(configData:dict, filename:str):
-    indexesSizeAlphasList = calculateFramesFusionAndSizeAlpha(configData)
-    videoDims = np.array(configData['video_data']['size'], dtype=np.int32)
-    print("DEBUG - Video dimensions:", videoDims)
-    videoFPS = int(configData['video_data']['FPS'])
-    interpolationMethod = configData['video_data'].get('interpolation_method', 'log')
-    videoWriter = cv.VideoWriter(filename, cv.VideoWriter_fourcc(*'XVID'), videoFPS, tuple(videoDims))
-    if not videoWriter.isOpened():
-        print("ERROR - Failed to open video writer")
-        return
-    for firstIndex, sizeAlpha in indexesSizeAlphasList:
+class videoGeneratorClass:
+    #---------------------------------------------------------------------
+    def __init__(self, configData:dict, filename:str):
+        self.configData = configData
+        self.filename = filename
+    #---------------------------------------------------------------------
+    def openvideo(self):
+        self.videoWriter = cv.VideoWriter(self.filename, cv.VideoWriter_fourcc(*'XVID'), 
+                                          int(self.configData['video_data']['FPS']), 
+                                          tuple(np.array(self.configData['video_data']['size'], dtype=np.int32)))
+        if not self.videoWriter.isOpened():
+            print("ERROR - Failed to open video writer")
+            return False
+        return True
+    #---------------------------------------------------------------------
+    def saveVideoFrame(self, frame):
+        if hasattr(self, 'videoWriter') and self.videoWriter.isOpened():
+            self.videoWriter.write(frame)
+    #---------------------------------------------------------------------
+    def closevideo(self):
+        if hasattr(self, 'videoWriter') and self.videoWriter.isOpened():
+            self.videoWriter.release()
+    #---------------------------------------------------------------------
+    def performVideoCalculations(self):
+        self.indexesSizeAlphasList, errorMsg = calculateFramesFusionAndSizeAlpha(self.configData)
+        if errorMsg:
+            print("ERROR -", errorMsg)
+            return False, errorMsg
+        return True, None
+    #---------------------------------------------------------------------
+    def generateVideoFrame(self, firstIndex, sizeAlpha):
         print(f"DEBUG - Frame first index: {firstIndex}, sizeAlpha: {sizeAlpha}")
-        blendAlphaRange = configData['images_data'][firstIndex].get('alpha_range', (0.0, 1.0))
+        interpolationMethod = self.configData['video_data'].get('interpolation_method', 'log')
+        blendAlphaRange = self.configData['images_data'][firstIndex].get('alpha_range', (0.0, 1.0))
         blendAlpha = (sizeAlpha - blendAlphaRange[0]) / (blendAlphaRange[1] - blendAlphaRange[0])
         blendAlpha = np.clip(blendAlpha, 0.0, 1.0)
-        blendedFrame = createBlendedFrame(configData, index=firstIndex, sizeAlpha=sizeAlpha, blendAlpha=blendAlpha, interpolationMethod=interpolationMethod)
-        videoWriter.write(blendedFrame)
-    videoWriter.release()
-
+        return createBlendedFrame(self.configData, index=firstIndex, sizeAlpha=sizeAlpha, blendAlpha=blendAlpha, interpolationMethod=interpolationMethod)
+    #---------------------------------------------------------------------
+    def generateFullVideo(self):
+        success, errorMsg = self.performVideoCalculations()
+        if not success:
+            return False, errorMsg
+        if not self.openvideo():
+            return False, "Failed to open video"
+        for firstIndex, sizeAlpha in self.indexesSizeAlphasList:
+            videoFrame = self.generateVideoFrame(firstIndex, sizeAlpha)
+            self.saveVideoFrame(videoFrame)
+        return True, None
 #-------------------------------------------------------------------------
-
-
-
 if __name__ == "__main__": 
-    cfgFile = 'novoprojeto.zmr'
+    cfgFile = 'seed.zmr'
     cfgDict = loadConfig(cfgFile)
-    siftAlignment(cfgDict, 0)
+    videoGenerator = videoGeneratorClass(cfgDict, "seed.avi")
+    videoGenerator.generateFullVideo()
     quit()
-    generateVideo(cfgDict, "output.avi")
-
 
 
     cfgFile = 'prat.json'
