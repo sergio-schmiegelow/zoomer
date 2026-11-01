@@ -20,6 +20,8 @@ from PyQt6.QtWidgets import (
 	QListWidgetItem,
 	QPushButton,
 	QSplitter,
+	QSlider,
+	QStyle,
 	QSpinBox,
 	QTabWidget,
 	QToolButton,
@@ -309,9 +311,10 @@ class _FitImageLabel(QLabel):
 		self.setStyleSheet("background-color: #202020; color: white;")
 		self.setMouseTracking(True)
 
-	def set_source_pixmap(self, pixmap):
+	def set_source_pixmap(self, pixmap, keep_view=False):
 		self._source_pixmap = pixmap
-		self.zoom_all()
+		if not keep_view:
+			self.zoom_all()
 		if pixmap.isNull():
 			self.setPixmap(QPixmap())
 		else:
@@ -396,6 +399,162 @@ class _FitImageLabel(QLabel):
 		event.accept()
 
 
+class videoPreviewWidget(QWidget):
+	def __init__(self, parent=None):
+		super().__init__(parent)
+		self._frame_provider = None
+		self._total_frames = 0
+		self._needs_render = False
+		self._timer = QTimer(self)
+		self._timer.timeout.connect(self._advance_playback)
+		layout = QVBoxLayout(self)
+		layout.setContentsMargins(0, 0, 0, 0)
+		self.slider = QSlider(Qt.Orientation.Horizontal, self)
+		self.slider.setObjectName("videoPositionSlider")
+		self.position_label = QLabel("No video")
+		self.position_label.setMinimumWidth(110)
+		self.position_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+		slider_row = QHBoxLayout()
+		slider_row.addWidget(self.slider, 1)
+		slider_row.addWidget(self.position_label)
+		layout.addLayout(slider_row)
+
+		style = self.style()
+		self.start_button = self._make_button("videoStartButton", "Go to start", style.standardIcon(QStyle.StandardPixmap.SP_MediaSkipBackward))
+		self.previous_button = self._make_button("videoPreviousFrameButton", "Return one frame", style.standardIcon(QStyle.StandardPixmap.SP_MediaSeekBackward))
+		self.play_button = self._make_button("videoPlayButton", "Play", style.standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+		self.pause_button = self._make_button("videoPauseButton", "Pause", style.standardIcon(QStyle.StandardPixmap.SP_MediaPause))
+		self.next_button = self._make_button("videoNextFrameButton", "Advance one frame", style.standardIcon(QStyle.StandardPixmap.SP_MediaSeekForward))
+		self.end_button = self._make_button("videoEndButton", "Go to end", style.standardIcon(QStyle.StandardPixmap.SP_MediaSkipForward))
+		buttons_row = QHBoxLayout()
+		buttons_row.addStretch(1)
+		for button in (self.start_button, self.previous_button, self.play_button,
+			self.pause_button, self.next_button, self.end_button):
+			buttons_row.addWidget(button)
+		buttons_row.addStretch(1)
+		layout.addLayout(buttons_row)
+
+		self.canvas = _FitImageLabel("Video preview unavailable")
+		layout.addWidget(self.canvas, 1)
+
+		self.slider.valueChanged.connect(self._position_changed)
+		self.start_button.clicked.connect(lambda _checked=False: self.slider.setValue(0))
+		self.end_button.clicked.connect(lambda _checked=False: self.slider.setValue(self.slider.maximum()))
+		self.previous_button.clicked.connect(lambda _checked=False: self.slider.setValue(self.slider.value() - 1))
+		self.next_button.clicked.connect(lambda _checked=False: self.slider.setValue(self.slider.value() + 1))
+		self.play_button.clicked.connect(lambda _checked=False: self.play())
+		self.pause_button.clicked.connect(lambda _checked=False: self.pause())
+		self._fps = 30.0
+		self._update_controls()
+
+	@staticmethod
+	def _make_button(object_name, tooltip, icon):
+		button = QToolButton()
+		button.setObjectName(object_name)
+		button.setIcon(icon)
+		button.setToolTip(tooltip)
+		button.setAccessibleName(tooltip)
+		return button
+
+	def is_playing(self):
+		return self._timer.isActive()
+
+	def set_video(self, total_frames, fps, frame_provider):
+		self._frame_provider = frame_provider
+		self._total_frames = max(0, int(total_frames))
+		self._fps = max(1.0, float(fps))
+		if self.is_playing():
+			self._timer.setInterval(self._playback_interval())
+		self.slider.blockSignals(True)
+		self.slider.setRange(0, max(0, self._total_frames - 1))
+		self.slider.blockSignals(False)
+		self._update_controls()
+		self._render_current_frame()
+
+	def set_error(self, message):
+		self.pause()
+		self._frame_provider = None
+		self._total_frames = 0
+		self._needs_render = False
+		self.slider.blockSignals(True)
+		self.slider.setRange(0, 0)
+		self.slider.blockSignals(False)
+		self.canvas.set_source_pixmap(QPixmap())
+		self.canvas.setText(message)
+		self._update_controls()
+
+	def play(self):
+		if self._total_frames < 2:
+			return
+		if self.slider.value() >= self.slider.maximum():
+			self.slider.setValue(0)
+		# The timer interval caps playback at the project FPS; slow renders only lower it.
+		self._timer.start(self._playback_interval())
+		self._update_controls()
+
+	def pause(self):
+		self._timer.stop()
+		self._update_controls()
+
+	def _playback_interval(self):
+		return max(1, round(1000 / self._fps))
+
+	def _advance_playback(self):
+		if self.slider.value() >= self.slider.maximum():
+			self.pause()
+			return
+		self.slider.setValue(self.slider.value() + 1)
+
+	def _update_controls(self):
+		has_video = self._frame_provider is not None and self._total_frames > 0
+		playing = self.is_playing()
+		self.slider.setEnabled(has_video)
+		for button in (self.start_button, self.previous_button, self.next_button, self.end_button):
+			button.setEnabled(has_video and not playing)
+		self.play_button.setEnabled(has_video and self._total_frames > 1 and not playing)
+		self.pause_button.setEnabled(playing)
+		if has_video:
+			self.position_label.setText(f"Frame {self.slider.value() + 1} / {self._total_frames}")
+		else:
+			self.position_label.setText("No video")
+
+	def _position_changed(self, _value):
+		self._update_controls()
+		self._render_current_frame()
+
+	def _render_current_frame(self):
+		if self._frame_provider is None or self._total_frames <= 0:
+			return
+		if not self.isVisible():
+			self._needs_render = True
+			return
+		self._needs_render = False
+		try:
+			frame = self._frame_provider(self.slider.value())
+		except Exception as error:
+			print(error)
+			self.pause()
+			self.canvas.set_source_pixmap(QPixmap())
+			self.canvas.setText("Unable to generate video frame")
+			return
+		if frame is None or not hasattr(frame, "shape"):
+			self.canvas.set_source_pixmap(QPixmap())
+			self.canvas.setText("Unable to generate video frame")
+			return
+		pixmap = QPixmap.fromImage(_array_to_qimage(frame))
+		same_size = pixmap.size() == self.canvas._source_pixmap.size()
+		self.canvas.set_source_pixmap(pixmap, keep_view=same_size)
+
+	def showEvent(self, event):
+		super().showEvent(event)
+		if self._needs_render:
+			self._render_current_frame()
+
+	def hideEvent(self, event):
+		super().hideEvent(event)
+		self.pause()
+
+
 class previewArea(QWidget):
 	def __init__(self, parent=None):
 		super().__init__(parent)
@@ -405,6 +564,8 @@ class previewArea(QWidget):
 		self.fusion_image_label = _FitImageLabel("Fusion preview unavailable")
 		self.tabs.addTab(self.input_image_label, "Input image")
 		self.tabs.addTab(self.fusion_image_label, "Fusion preview")
+		self.video_preview = videoPreviewWidget()
+		self.tabs.addTab(self.video_preview, "Video preview")
 		self.tabs.setCurrentWidget(self.fusion_image_label)
 		self.tabs.currentChanged.connect(self._update_previews)
 		layout = QVBoxLayout(self)
@@ -453,6 +614,12 @@ class previewArea(QWidget):
 		self.fusion_image_label.setPixmap(QPixmap())
 		self.fusion_image_label.setText(message)
 
+	def set_video(self, total_frames, fps, frame_provider):
+		self.video_preview.set_video(total_frames, fps, frame_provider)
+
+	def set_video_error(self, message):
+		self.video_preview.set_error(message)
+
 	def resizeEvent(self, event):
 		super().resizeEvent(event)
 		QTimer.singleShot(0, self._fit_previews)
@@ -460,10 +627,12 @@ class previewArea(QWidget):
 	def _fit_previews(self):
 		self.input_image_label.zoom_all()
 		self.fusion_image_label.zoom_all()
+		self.video_preview.canvas.zoom_all()
 		self._update_previews()
 
 	def zoom_all(self):
 		current_label = self.tabs.currentWidget()
+		current_label = getattr(current_label, "canvas", current_label)
 		if isinstance(current_label, _FitImageLabel):
 			current_label.zoom_all()
 

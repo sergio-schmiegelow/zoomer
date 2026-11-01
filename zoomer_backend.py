@@ -429,6 +429,16 @@ class videoGeneratorClass:
             return False, errorMsg
         return True, None
     #---------------------------------------------------------------------
+    def getTotalFrames(self):
+        return len(self.indexesSizeAlphasList)
+    #---------------------------------------------------------------------
+    def generateVideoFrameOnPosition(self, position):
+        if position < 0 or position >= len(self.indexesSizeAlphasList):
+            print("ERROR - Invalid position")
+            return None
+        firstIndex, sizeAlpha = self.indexesSizeAlphasList[position]
+        return self.generateVideoFrame(firstIndex, sizeAlpha)
+    #---------------------------------------------------------------------
     def generateVideoFrame(self, firstIndex, sizeAlpha):
         print(f"DEBUG - Frame first index: {firstIndex}, sizeAlpha: {sizeAlpha}")
         interpolationMethod = self.configData['video_data'].get('interpolation_method', 'log')

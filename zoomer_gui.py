@@ -13,14 +13,15 @@ from PyQt6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox,
 from widgets import (
 	VideoSettingsDialog,
 	imageFilesAndPreviewArea,
-	imageFusionEditionArea,
+	imageFusionEditionArea
 )
 from zoomer_backend import (
     imageClass, 
     loadConfig, 
     saveConfig, 
     createBlendedFrame,
-    autoAlignImages
+    autoAlignImages,
+    videoGeneratorClass
 )
 
 HISTORY_LIMIT = 10
@@ -63,6 +64,11 @@ class MainApp(QMainWindow):
 		self.image_entries = []
 		self._alignment_job = None
 		self._alignment_jobs = set()
+		self._video_generator = None
+		self._video_preview_timer = QTimer(self)
+		self._video_preview_timer.setSingleShot(True)
+		self._video_preview_timer.setInterval(200)
+		self._video_preview_timer.timeout.connect(self._refresh_video_preview)
 		self._undo_stack = deque(maxlen=HISTORY_LIMIT)
 		self._redo_stack = deque(maxlen=HISTORY_LIMIT)
 		# Drags emit many edits; one burst becomes a single history entry.
@@ -262,6 +268,33 @@ class MainApp(QMainWindow):
 		paths = [self._path_for_entry(entry) for entry in image_entries]
 		organizer.set_image_files(paths)
 		self._show_pair(max(0, organizer.image_list.currentRow()))
+		self._schedule_video_preview()
+
+	def _schedule_video_preview(self):
+		self._video_preview_timer.start()
+
+	def _refresh_video_preview(self):
+		if not hasattr(self, "image_files_and_preview_area"):
+			return
+		preview_area = self.image_files_and_preview_area.preview_area
+		if len(self.image_entries) < 2:
+			preview_area.set_video_error("Add at least two images to preview the video")
+			return
+		try:
+			if self._video_generator is None or self._video_generator.configData is not self.configData:
+				self._video_generator = videoGeneratorClass(self.configData, "")
+			success, error = self._video_generator.performVideoCalculations()
+		except Exception as exception:
+			print(exception)
+			success, error = False, str(exception)
+		if not success:
+			preview_area.set_video_error(error or "Unable to calculate the video")
+			return
+		preview_area.set_video(
+			self._video_generator.getTotalFrames(),
+			self.video_settings.get("FPS", 30),
+			self._video_generator.generateVideoFrameOnPosition,
+		)
 
 	def _set_frame_crosshair_enabled(self, enabled):
 		self.app_config["frame_crosshair"] = bool(enabled)
@@ -490,6 +523,7 @@ class MainApp(QMainWindow):
 		return [[center_x + x, center_y + y] for x, y in vertices]
 
 	def save_autosave(self):
+		self._schedule_video_preview()
 		if self.project_filename:
 			saveConfig(self.project_filename, self.configData)
 
