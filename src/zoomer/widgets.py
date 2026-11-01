@@ -1515,8 +1515,6 @@ class ImageMarkersEditor(QWidget):
             else image_filename
         )
         image_path = Path(filename)
-        if not image_path.is_absolute():
-            image_path = Path(__file__).resolve().parent / image_path
         self.image = load_oriented_image(image_filename)
         if self.image.isNull():
             raise ValueError(f"Unable to load image: {image_path}")

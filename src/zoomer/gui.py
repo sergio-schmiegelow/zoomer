@@ -1,3 +1,4 @@
+import argparse
 import copy
 import json
 import math
@@ -16,12 +17,7 @@ from PyQt6.QtWidgets import (
     QSplitter,
 )
 
-from widgets import (
-    ImageFilesAndPreviewArea,
-    ImageFusionEditionArea,
-    VideoSettingsDialog,
-)
-from zoomer_backend import (
+from .backend import (
     ImageClass,
     VideoGenerator,
     auto_align_images,
@@ -29,8 +25,14 @@ from zoomer_backend import (
     load_config,
     save_config,
 )
+from .widgets import (
+    ImageFilesAndPreviewArea,
+    ImageFusionEditionArea,
+    VideoSettingsDialog,
+)
 
 HISTORY_LIMIT = 10
+CFG_FILENAME = "zoomer.cfg"
 
 
 class _AlignmentJob(QThread):
@@ -72,9 +74,7 @@ class MainApp(QMainWindow):
             if autosave_path and Path(autosave_path).suffix.lower() == ".zmr"
             else None
         )
-        self.cfg_path = Path(
-            cfg_path or Path(__file__).resolve().parent / "zoomer.cfg"
-        )
+        self.cfg_path = Path(cfg_path or Path.cwd() / CFG_FILENAME)
         self.cfg_data = {**CFG_DEFAULTS, **(cfg_data or {})}
         self.export_filename = ""
         self.proj_image_entries = []
@@ -738,17 +738,26 @@ class MainApp(QMainWindow):
         self._fusion_preview_timer.start()
 
 
-def main() -> int:
-    app = QApplication(sys.argv)
-    app_directory = Path(__file__).resolve().parent
-    cfg_path = app_directory / "zoomer.cfg"
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="zoomer", description="Create zoom videos from image pairs."
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path.cwd() / CFG_FILENAME,
+        help=f"application config file (default: ./{CFG_FILENAME})",
+    )
+    args = parser.parse_args(argv)
+    app = QApplication.instance() or QApplication(sys.argv[:1])
+    cfg_path = args.config.resolve()
     try:
         with cfg_path.open("r", encoding="utf-8") as cfg_file:
             cfg_data = {**CFG_DEFAULTS, **json.load(cfg_file)}
     except (OSError, json.JSONDecodeError):
         cfg_data = dict(CFG_DEFAULTS)
     window = MainApp(cfg_data=cfg_data, cfg_path=cfg_path)
-    window.set_image_workspace([], app_directory)
+    window.set_image_workspace([], cfg_path.parent)
     cfg_last_project = cfg_data.get("last_project", "")
     if (
         cfg_data.get("auto_open_last_project")
