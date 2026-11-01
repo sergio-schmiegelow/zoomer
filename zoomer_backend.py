@@ -44,22 +44,22 @@ class imageClass:
 #-------------------------------------------------------------------------
 def loadConfig(filename:str)->dict:
     with open(filename, 'r') as f:
-        cfgDict = json.load(f)
-    for imageData in cfgDict['images_data']:
+        projData = json.load(f)
+    for imageData in projData['images_data']:
         imageData['image'] = imageClass(str(imageData['image']))
-    return cfgDict
+    return projData
 #-------------------------------------------------------------------------
-def saveConfig(filename:str, cfgDict:dict)->None:
-    cfgDictCopy = dict(cfgDict)
-    cfgDictCopy['images_data'] = []
-    for imageData in cfgDict['images_data']:
+def saveConfig(filename:str, projData:dict)->None:
+    projDataCopy = dict(projData)
+    projDataCopy['images_data'] = []
+    for imageData in projData['images_data']:
         imageDataCopy = dict(imageData)
         imageObject = imageDataCopy['image']
         if isinstance(imageObject, imageClass):
             imageDataCopy['image'] = str(imageObject.getImagePath())
-        cfgDictCopy['images_data'].append(imageDataCopy)
+        projDataCopy['images_data'].append(imageDataCopy)
     with open(filename, 'w') as f:
-        json.dump(cfgDictCopy, f, indent=2)
+        json.dump(projDataCopy, f, indent=2)
     return
 #-------------------------------------------------------------------------
 class affineTransformerClass:
@@ -245,16 +245,16 @@ def getBlendAlphaRange(videoSize:np.ndarray,
                 maxSizeAlphaForBlending = testSizeAlpha
     return minSizeAlphaForBlending, maxSizeAlphaForBlending
 #-------------------------------------------------------------------------
-def createBlendedFrame(configData:dict, index:int, sizeAlpha:float, blendAlpha:float, interpolationMethod:str='log')->np.ndarray:
-    videoSize = np.array(configData['video_data']['size'], dtype=np.int32)
+def createBlendedFrame(projData:dict, index:int, sizeAlpha:float, blendAlpha:float, interpolationMethod:str='log')->np.ndarray:
+    videoSize = np.array(projData['video_data']['size'], dtype=np.int32)
     
-    imgPrev =                 configData['images_data'][index]['image'].getCvImage()
-    framePrev  =     np.array(configData['images_data'][index]['frame'], dtype=np.float32)
-    prevNextPoints = np.array(configData['images_data'][index]['next_points'], dtype=np.float32)
+    imgPrev =                 projData['images_data'][index]['image'].getCvImage()
+    framePrev  =     np.array(projData['images_data'][index]['frame'], dtype=np.float32)
+    prevNextPoints = np.array(projData['images_data'][index]['next_points'], dtype=np.float32)
 
-    imgNext =                 configData['images_data'][index + 1]['image'].getCvImage()
-    frameNext  =     np.array(configData['images_data'][index + 1]['frame'], dtype=np.float32)
-    nextPrevPoints = np.array(configData['images_data'][index + 1]['prev_points'], dtype=np.float32)
+    imgNext =                 projData['images_data'][index + 1]['image'].getCvImage()
+    frameNext  =     np.array(projData['images_data'][index + 1]['frame'], dtype=np.float32)
+    nextPrevPoints = np.array(projData['images_data'][index + 1]['prev_points'], dtype=np.float32)
     
     intermediateFrame0 = createIntermediateFrame(videoSize, imgPrev, prevNextPoints, framePrev, nextPrevPoints, frameNext, sizeAlpha,  interpolationMethod=interpolationMethod)
     intermediateFrame1 = createIntermediateFrame(videoSize, imgNext, nextPrevPoints, frameNext, prevNextPoints, framePrev, 1-sizeAlpha, interpolationMethod=interpolationMethod )
@@ -271,15 +271,15 @@ def calculateFramesCorrelation(frame0:np.ndarray, frame1:np.ndarray)->float:
     print(f'DEBUG - correlation: {correlation}')
     return correlation
 #-------------------------------------------------------------------------
-def autoAlignImages(configData:dict, index:int, useOnlyFrame = True)->np.ndarray:
-    # Perform alignment for the image at the given index in the configData.
+def autoAlignImages(projData:dict, index:int, useOnlyFrame = True)->np.ndarray:
+    # Perform alignment for the image at the given index in the projData.
     # Returns the aligned points as a numpy array of shape (3, 2).
-    img0 = configData['images_data'][index    ]['image'].getCvImage()
-    img1 = configData['images_data'][index + 1]['image'].getCvImage()
+    img0 = projData['images_data'][index    ]['image'].getCvImage()
+    img1 = projData['images_data'][index + 1]['image'].getCvImage()
     if useOnlyFrame:
-        videoDims = configData['video_data']['size']
-        frame0 = configData['images_data'][index    ]['frame']
-        frame1 = configData['images_data'][index + 1]['frame']
+        videoDims = projData['video_data']['size']
+        frame0 = projData['images_data'][index    ]['frame']
+        frame1 = projData['images_data'][index + 1]['frame']
         img0 = extractVideoFrameFromImage(img0, frame0, videoDims)
         img1 = extractVideoFrameFromImage(img1, frame1, videoDims)
     
@@ -288,8 +288,8 @@ def autoAlignImages(configData:dict, index:int, useOnlyFrame = True)->np.ndarray
     if useOnlyFrame:
         img0_next_points = convertVideoPointsToImageDimensions(img0_next_points, frame0, videoDims)
         img1_prev_points = convertVideoPointsToImageDimensions(img1_prev_points, frame1, videoDims)
-    configData['images_data'][index]['next_points'] = img0_next_points
-    configData['images_data'][index + 1]['prev_points'] = img1_prev_points
+    projData['images_data'][index]['next_points'] = img0_next_points
+    projData['images_data'][index + 1]['prev_points'] = img1_prev_points
     return True
 #-------------------------------------------------------------------------
 def siftAlignment(img0, img1)->np.ndarray:
@@ -350,18 +350,18 @@ def orbAlignment(img0, img1)->np.ndarray:
 
     return img0_next_points, img1_prev_points
 #-------------------------------------------------------------------------
-def calculateZoomArray(configData:dict)->tuple:
+def calculateZoomArray(projData:dict)->tuple:
     currentZoom = 1.0
     imgZooms = [1.0]
-    videoDims = np.array(configData['video_data']['size'], dtype=np.int32)
-    for i in range(len(configData['images_data']) - 1):
-        img0 = configData['images_data'][i]['image']
-        frame0 = np.array(configData['images_data'][i]['frame'], dtype=np.float32)
-        nextPoints0 = np.array(configData['images_data'][i]['next_points'], dtype=np.float32)
+    videoDims = np.array(projData['video_data']['size'], dtype=np.int32)
+    for i in range(len(projData['images_data']) - 1):
+        img0 = projData['images_data'][i]['image']
+        frame0 = np.array(projData['images_data'][i]['frame'], dtype=np.float32)
+        nextPoints0 = np.array(projData['images_data'][i]['next_points'], dtype=np.float32)
 
-        img1 = configData['images_data'][i + 1]['image']
-        frame1 = np.array(configData['images_data'][i + 1]['frame'], dtype=np.float32)
-        prevPoints1 = np.array(configData['images_data'][i + 1]['prev_points'], dtype=np.float32)
+        img1 = projData['images_data'][i + 1]['image']
+        frame1 = np.array(projData['images_data'][i + 1]['frame'], dtype=np.float32)
+        prevPoints1 = np.array(projData['images_data'][i + 1]['prev_points'], dtype=np.float32)
 
         convertedPoints0 = convertImgPointsToVideoDimensions(nextPoints0, frame0, videoDims)
         convertedPoints1 = convertImgPointsToVideoDimensions(prevPoints1, frame1, videoDims)
@@ -380,12 +380,12 @@ def calculateZoomArray(configData:dict)->tuple:
     print("Image zooms:", imgZooms)
     return imgZooms, None
 #-------------------------------------------------------------------------
-def calculateFramesFusionAndSizeAlpha(configData:dict):
-    zoomArray, errorMsg = calculateZoomArray(configData)
+def calculateFramesFusionAndSizeAlpha(projData:dict):
+    zoomArray, errorMsg = calculateZoomArray(projData)
     if errorMsg is not None:
         return None, errorMsg
     logZoomArray = np.log(zoomArray)
-    totalFrames = int(configData['video_data']['FPS'] * configData['video_data']['duration'])
+    totalFrames = int(projData['video_data']['FPS'] * projData['video_data']['duration'])
     framesLogsZooms = np.linspace(0, logZoomArray[-1], num=totalFrames)
     print("DEBUG - Frames logs zooms:", framesLogsZooms)
     indexesStepsList = []
@@ -401,14 +401,14 @@ def calculateFramesFusionAndSizeAlpha(configData:dict):
 #-------------------------------------------------------------------------
 class videoGeneratorClass:
     #---------------------------------------------------------------------
-    def __init__(self, configData:dict, filename:str):
-        self.configData = configData
+    def __init__(self, projData:dict, filename:str):
+        self.projData = projData
         self.filename = filename
     #---------------------------------------------------------------------
     def openvideo(self):
         self.videoWriter = cv.VideoWriter(self.filename, cv.VideoWriter_fourcc(*'XVID'), 
-                                          int(self.configData['video_data']['FPS']), 
-                                          tuple(np.array(self.configData['video_data']['size'], dtype=np.int32)))
+                                          int(self.projData['video_data']['FPS']), 
+                                          tuple(np.array(self.projData['video_data']['size'], dtype=np.int32)))
         if not self.videoWriter.isOpened():
             print("ERROR - Failed to open video writer")
             return False
@@ -423,7 +423,7 @@ class videoGeneratorClass:
             self.videoWriter.release()
     #---------------------------------------------------------------------
     def performVideoCalculations(self):
-        self.indexesSizeAlphasList, errorMsg = calculateFramesFusionAndSizeAlpha(self.configData)
+        self.indexesSizeAlphasList, errorMsg = calculateFramesFusionAndSizeAlpha(self.projData)
         if errorMsg:
             print("ERROR -", errorMsg)
             return False, errorMsg
@@ -441,11 +441,11 @@ class videoGeneratorClass:
     #---------------------------------------------------------------------
     def generateVideoFrame(self, firstIndex, sizeAlpha):
         print(f"DEBUG - Frame first index: {firstIndex}, sizeAlpha: {sizeAlpha}")
-        interpolationMethod = self.configData['video_data'].get('interpolation_method', 'log')
-        blendAlphaRange = self.configData['images_data'][firstIndex].get('alpha_range', (0.0, 1.0))
+        interpolationMethod = self.projData['video_data'].get('interpolation_method', 'log')
+        blendAlphaRange = self.projData['images_data'][firstIndex].get('alpha_range', (0.0, 1.0))
         blendAlpha = (sizeAlpha - blendAlphaRange[0]) / (blendAlphaRange[1] - blendAlphaRange[0])
         blendAlpha = np.clip(blendAlpha, 0.0, 1.0)
-        return createBlendedFrame(self.configData, index=firstIndex, sizeAlpha=sizeAlpha, blendAlpha=blendAlpha, interpolationMethod=interpolationMethod)
+        return createBlendedFrame(self.projData, index=firstIndex, sizeAlpha=sizeAlpha, blendAlpha=blendAlpha, interpolationMethod=interpolationMethod)
     #---------------------------------------------------------------------
     def generateFullVideo(self):
         success, errorMsg = self.performVideoCalculations()
@@ -459,28 +459,28 @@ class videoGeneratorClass:
         return True, None
 #-------------------------------------------------------------------------
 if __name__ == "__main__": 
-    cfgFile = 'seed.zmr'
-    cfgDict = loadConfig(cfgFile)
-    videoGenerator = videoGeneratorClass(cfgDict, "seed.avi")
+    projFile = 'seed.zmr'
+    projData = loadConfig(projFile)
+    videoGenerator = videoGeneratorClass(projData, "seed.avi")
     videoGenerator.generateFullVideo()
     quit()
 
 
-    cfgFile = 'prat.json'
-    cfgDict = loadConfig(cfgFile)
-    saveConfig("out.json", cfgDict)
+    projFile = 'prat.json'
+    projData = loadConfig(projFile)
+    saveConfig("out.json", projData)
 
     
-    videoDims = np.array(cfgDict['video_data']['size'], dtype=np.int32)
+    videoDims = np.array(projData['video_data']['size'], dtype=np.int32)
     
     #Extract the first images pair data from the configuration dictionary
-    img0 = cfgDict['images_data'][0]['image']
-    frame0 = np.array(cfgDict['images_data'][0]['frame'], dtype=np.float32)
-    nextPoints0 = np.array(cfgDict['images_data'][0]['next_points'], dtype=np.float32)
+    img0 = projData['images_data'][0]['image']
+    frame0 = np.array(projData['images_data'][0]['frame'], dtype=np.float32)
+    nextPoints0 = np.array(projData['images_data'][0]['next_points'], dtype=np.float32)
     
-    img1 = cfgDict['images_data'][1]['image']
-    frame1 = np.array(cfgDict['images_data'][1]['frame'], dtype=np.float32)
-    prevPoints1 = np.array(cfgDict['images_data'][1]['prev_points'], dtype=np.float32)
+    img1 = projData['images_data'][1]['image']
+    frame1 = np.array(projData['images_data'][1]['frame'], dtype=np.float32)
+    prevPoints1 = np.array(projData['images_data'][1]['prev_points'], dtype=np.float32)
 
     minBlendAlpha, maxBlendAlpha = getBlendAlphaRange(videoDims, img0.getCvImage(), nextPoints0, frame0, img1.getCvImage(), prevPoints1, frame1)
     print(f"DEBUG - blendAlphaRange = {minBlendAlpha} to {maxBlendAlpha}")
@@ -488,7 +488,7 @@ if __name__ == "__main__":
         blendAlpha = (sizeAlpha - minBlendAlpha) / (maxBlendAlpha - minBlendAlpha) 
         blendAlpha = np.clip(blendAlpha, 0.0, 1.0)
         print(f"DEBUG - sizeAlpha = {sizeAlpha}, blendAlpha = {blendAlpha}")
-        blendedFrame = createBlendedFrame(cfgDict, 0, sizeAlpha, blendAlpha)
+        blendedFrame = createBlendedFrame(projData, 0, sizeAlpha, blendAlpha)
 
         cv.imshow(f'Blended Frame', blendedFrame)
         cv.waitKey(1)

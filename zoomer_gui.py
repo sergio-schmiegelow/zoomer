@@ -28,19 +28,19 @@ HISTORY_LIMIT = 10
 
 
 class _AlignmentJob(QThread):
-	def __init__(self, config_data, parent=None):
+	def __init__(self, proj_data, parent=None):
 		super().__init__(parent)
-		self.config_data = config_data
+		self.proj_data = proj_data
 		self.aligned = False
 		self.error = None
 		self.cancelled = False
 
 	def run(self):
 		try:
-			self.aligned = bool(autoAlignImages(self.config_data, 0))
+			self.aligned = bool(autoAlignImages(self.proj_data, 0))
 		except Exception as error:
 			self.error = error
-APP_CONFIG_DEFAULTS = {
+CFG_DEFAULTS = {
 	"frame_crosshair": True,
 	"auto_open_last_project": False,
 	"last_project": "",
@@ -48,20 +48,20 @@ APP_CONFIG_DEFAULTS = {
 
 
 class MainApp(QMainWindow):
-	def __init__(self, config_data=None, autosave_path=None, app_config=None, app_config_path=None):
+	def __init__(self, proj_data=None, autosave_path=None, cfg_data=None, cfg_path=None):
 		super().__init__()
-		self.configData = config_data if config_data is not None else {
+		self.projData = proj_data if proj_data is not None else {
 			"video_data": {}, "images_data": []
 		}
-		self.video_settings = self.configData.setdefault("video_data", {})
-		self.configData.setdefault("images_data", [])
-		self.project_filename = (
+		self.proj_video_settings = self.projData.setdefault("video_data", {})
+		self.projData.setdefault("images_data", [])
+		self.proj_filename = (
 			str(autosave_path) if autosave_path and Path(autosave_path).suffix.lower() == ".zmr" else None
 		)
-		self.app_config_path = Path(app_config_path or Path(__file__).resolve().parent / "zoomer.cfg")
-		self.app_config = {**APP_CONFIG_DEFAULTS, **(app_config or {})}
+		self.cfg_path = Path(cfg_path or Path(__file__).resolve().parent / "zoomer.cfg")
+		self.cfgData = {**CFG_DEFAULTS, **(cfg_data or {})}
 		self.export_filename = ""
-		self.image_entries = []
+		self.proj_image_entries = []
 		self._alignment_job = None
 		self._alignment_jobs = set()
 		self._video_generator = None
@@ -78,7 +78,7 @@ class MainApp(QMainWindow):
 		self.setWindowTitle("Zoomer")
 		self._create_menus()
 		self._update_window_title()
-		self._save_app_config()
+		self._save_cfg()
 
 	def _create_menus(self):
 		file_menu = self.menuBar().addMenu("&File")
@@ -107,48 +107,48 @@ class MainApp(QMainWindow):
 		export_action.triggered.connect(self.select_export_filename)
 
 		options_menu = self.menuBar().addMenu("&Options")
-		self.frame_crosshair_action = options_menu.addAction("Frame crosshair")
-		self.frame_crosshair_action.setCheckable(True)
-		self.frame_crosshair_action.setChecked(bool(self.app_config["frame_crosshair"]))
-		self.frame_crosshair_action.toggled.connect(self._set_frame_crosshair_enabled)
-		self.auto_open_last_project_action = options_menu.addAction("Auto open last project")
-		self.auto_open_last_project_action.setCheckable(True)
-		self.auto_open_last_project_action.setChecked(
-			bool(self.app_config["auto_open_last_project"])
+		self.cfg_frame_crosshair_action = options_menu.addAction("Frame crosshair")
+		self.cfg_frame_crosshair_action.setCheckable(True)
+		self.cfg_frame_crosshair_action.setChecked(bool(self.cfgData["frame_crosshair"]))
+		self.cfg_frame_crosshair_action.toggled.connect(self._set_frame_crosshair_enabled)
+		self.cfg_auto_open_last_project_action = options_menu.addAction("Auto open last project")
+		self.cfg_auto_open_last_project_action.setCheckable(True)
+		self.cfg_auto_open_last_project_action.setChecked(
+			bool(self.cfgData["auto_open_last_project"])
 		)
-		self.auto_open_last_project_action.toggled.connect(self._set_auto_open_last_project)
+		self.cfg_auto_open_last_project_action.toggled.connect(self._set_auto_open_last_project)
 
-	def _save_app_config(self):
-		self.app_config_path.parent.mkdir(parents=True, exist_ok=True)
-		temporary_path = self.app_config_path.with_name(self.app_config_path.name + ".tmp")
+	def _save_cfg(self):
+		self.cfg_path.parent.mkdir(parents=True, exist_ok=True)
+		temporary_path = self.cfg_path.with_name(self.cfg_path.name + ".tmp")
 		with temporary_path.open("w", encoding="utf-8") as config_file:
-			json.dump(self.app_config, config_file, indent=2)
-		temporary_path.replace(self.app_config_path)
+			json.dump(self.cfgData, config_file, indent=2)
+		temporary_path.replace(self.cfg_path)
 
 	def _set_auto_open_last_project(self, enabled):
-		self.app_config["auto_open_last_project"] = bool(enabled)
-		self._save_app_config()
+		self.cfgData["auto_open_last_project"] = bool(enabled)
+		self._save_cfg()
 
 	def _remember_project(self, filename):
-		self.app_config["last_project"] = str(Path(filename).resolve())
-		self._save_app_config()
+		self.cfgData["last_project"] = str(Path(filename).resolve())
+		self._save_cfg()
 		self._update_window_title()
 
 	def _update_window_title(self):
-		project_name = self.configData.get("project_name", "")
-		if not project_name and self.project_filename:
-			project_name = Path(self.project_filename).stem
+		project_name = self.projData.get("project_name", "")
+		if not project_name and self.proj_filename:
+			project_name = Path(self.proj_filename).stem
 		self.setWindowTitle(f"Zoomer - {project_name}" if project_name else "Zoomer - No project")
 
 	def open_project(self, _checked=False):
 		filename, _selected_filter = QFileDialog.getOpenFileName(
-			self, "Open project", self.project_filename or str(Path.home()),
+			self, "Open project", self.proj_filename or str(Path.home()),
 			"Zoomer projects (*.zmr);;All files (*)",
 		)
 		if not filename:
 			return
 		try:
-			loaded = loadConfig(filename)
+			proj_loaded = loadConfig(filename)
 		except Exception as error:
 			print(error)
 			QMessageBox.warning(self, "Open project", f"Unable to open {filename}:\n{error}")
@@ -156,32 +156,32 @@ class MainApp(QMainWindow):
 		self._undo_stack.clear()
 		self._redo_stack.clear()
 		self._edit_burst_timer.stop()
-		self.project_filename = filename
-		self.base_directory = Path(filename).resolve().parent
-		loaded.setdefault("images_data", [])
-		loaded.setdefault("video_data", {})
-		self._apply_restored_config(loaded)
+		self.proj_filename = filename
+		self.proj_directory = Path(filename).resolve().parent
+		proj_loaded.setdefault("images_data", [])
+		proj_loaded.setdefault("video_data", {})
+		self._apply_restored_config(proj_loaded)
 		self._remember_project(filename)
 		if self._normalize_boundary_points():
 			self.save_autosave()
 
 	def save_project(self, _checked=False):
-		if not self.project_filename:
+		if not self.proj_filename:
 			self.new_project()
 			return
-		saveConfig(self.project_filename, self.configData)
-		self._remember_project(self.project_filename)
+		saveConfig(self.proj_filename, self.projData)
+		self._remember_project(self.proj_filename)
 
 	def save_as(self, _checked=False):
 		filename, _selected_filter = QFileDialog.getSaveFileName(
-			self, "Save project as", self.project_filename or str(Path.home()),
+			self, "Save project as", self.proj_filename or str(Path.home()),
 			"Zoomer projects (*.zmr)",
 		)
 		if filename:
-			self.project_filename = str(Path(filename).with_suffix(".zmr"))
-			self.configData["project_name"] = Path(self.project_filename).stem
-			saveConfig(self.project_filename, self.configData)
-			self._remember_project(self.project_filename)
+			self.proj_filename = str(Path(filename).with_suffix(".zmr"))
+			self.projData["project_name"] = Path(self.proj_filename).stem
+			saveConfig(self.proj_filename, self.projData)
+			self._remember_project(self.proj_filename)
 
 	def new_project(self, _checked=False):
 		dialog = VideoSettingsDialog({}, self, project_mode=True)
@@ -200,26 +200,26 @@ class MainApp(QMainWindow):
 		self._undo_stack.clear()
 		self._redo_stack.clear()
 		self._edit_burst_timer.stop()
-		self.project_filename = str(Path(filename).with_suffix(".zmr"))
-		self.base_directory = Path(self.project_filename).resolve().parent
-		self.configData.clear()
-		self.configData.update({
+		self.proj_filename = str(Path(filename).with_suffix(".zmr"))
+		self.proj_directory = Path(self.proj_filename).resolve().parent
+		self.projData.clear()
+		self.projData.update({
 			"project_name": project_name,
 			"video_data": dialog.settings(),
 			"images_data": [],
 		})
-		self.video_settings = self.configData["video_data"]
-		self.image_entries = self.configData["images_data"]
-		self._apply_restored_config(dict(self.configData))
-		saveConfig(self.project_filename, self.configData)
-		self._remember_project(self.project_filename)
+		self.proj_video_settings = self.projData["video_data"]
+		self.proj_image_entries = self.projData["images_data"]
+		self._apply_restored_config(dict(self.projData))
+		saveConfig(self.proj_filename, self.projData)
+		self._remember_project(self.proj_filename)
 
 	def open_video_settings(self, _checked=False):
-		dialog = VideoSettingsDialog(self.video_settings, self)
+		dialog = VideoSettingsDialog(self.proj_video_settings, self)
 		if dialog.exec():
 			self._record_history()
-			self.video_settings = dialog.settings()
-			self.configData["video_data"] = self.video_settings
+			self.proj_video_settings = dialog.settings()
+			self.projData["video_data"] = self.proj_video_settings
 			self.save_autosave()
 
 	def select_export_filename(self, _checked=False):
@@ -233,9 +233,9 @@ class MainApp(QMainWindow):
 				export_path = export_path.with_suffix(".avi")
 			self.export_filename = str(export_path)
 
-	def set_image_workspace(self, image_entries, base_directory):
-		self.image_entries = self.configData["images_data"]
-		self.base_directory = Path(base_directory)
+	def set_image_workspace(self, proj_image_entries, proj_directory):
+		self.proj_image_entries = self.projData["images_data"]
+		self.proj_directory = Path(proj_directory)
 		if self._normalize_boundary_points():
 			self.save_autosave()
 		self.image_files_and_preview_area = imageFilesAndPreviewArea(self)
@@ -247,7 +247,7 @@ class MainApp(QMainWindow):
 		self.image_fusion_edition_area = imageFusionEditionArea(self)
 		self.image_fusion_editor = self.image_fusion_edition_area.editor
 		self.image_fusion_editor.set_frame_crosshair_enabled(
-			self.frame_crosshair_action.isChecked()
+			self.cfg_frame_crosshair_action.isChecked()
 		)
 		self.image_fusion_editor.pairRequested.connect(self._navigate_pair)
 		self.image_fusion_editor.imageEdited.connect(self._image_edited)
@@ -265,7 +265,7 @@ class MainApp(QMainWindow):
 		)
 		self.workspace_splitter.addWidget(self.image_fusion_edition_area)
 		self.setCentralWidget(self.workspace_splitter)
-		paths = [self._path_for_entry(entry) for entry in image_entries]
+		paths = [self._path_for_entry(entry) for entry in proj_image_entries]
 		organizer.set_image_files(paths)
 		self._show_pair(max(0, organizer.image_list.currentRow()))
 		self._schedule_video_preview()
@@ -277,12 +277,12 @@ class MainApp(QMainWindow):
 		if not hasattr(self, "image_files_and_preview_area"):
 			return
 		preview_area = self.image_files_and_preview_area.preview_area
-		if len(self.image_entries) < 2:
+		if len(self.proj_image_entries) < 2:
 			preview_area.set_video_error("Add at least two images to preview the video")
 			return
 		try:
-			if self._video_generator is None or self._video_generator.configData is not self.configData:
-				self._video_generator = videoGeneratorClass(self.configData, "")
+			if self._video_generator is None or self._video_generator.projData is not self.projData:
+				self._video_generator = videoGeneratorClass(self.projData, "")
 			success, error = self._video_generator.performVideoCalculations()
 		except Exception as exception:
 			print(exception)
@@ -292,23 +292,23 @@ class MainApp(QMainWindow):
 			return
 		preview_area.set_video(
 			self._video_generator.getTotalFrames(),
-			self.video_settings.get("FPS", 30),
+			self.proj_video_settings.get("FPS", 30),
 			self._video_generator.generateVideoFrameOnPosition,
 		)
 
 	def _set_frame_crosshair_enabled(self, enabled):
-		self.app_config["frame_crosshair"] = bool(enabled)
-		self._save_app_config()
+		self.cfgData["frame_crosshair"] = bool(enabled)
+		self._save_cfg()
 		if hasattr(self, "image_fusion_editor"):
 			self.image_fusion_editor.set_frame_crosshair_enabled(enabled)
 
 	def _run_auto_alignment(self, index):
-		if self._alignment_job is not None or not 0 <= index < len(self.image_entries) - 1:
+		if self._alignment_job is not None or not 0 <= index < len(self.proj_image_entries) - 1:
 			return
-		entries = (self.image_entries[index], self.image_entries[index + 1])
+		entries = (self.proj_image_entries[index], self.proj_image_entries[index + 1])
 		# The worker edits private copies so the live project changes only on success.
 		job = _AlignmentJob({
-			"video_data": self.video_settings,
+			"video_data": self.proj_video_settings,
 			"images_data": [dict(entry) for entry in entries],
 		}, self)
 		job.index = index
@@ -334,7 +334,7 @@ class MainApp(QMainWindow):
 		self._alignment_job = None
 		self.image_fusion_editor.set_alignment_running(False)
 		index = job.index
-		current = self.image_entries[index:index + 2]
+		current = self.proj_image_entries[index:index + 2]
 		still_valid = len(current) == 2 and all(a is b for a, b in zip(current, job.entries))
 		if job.error is not None:
 			print(job.error)
@@ -343,10 +343,10 @@ class MainApp(QMainWindow):
 		elif still_valid:
 			self._edit_burst_timer.stop()
 			self._record_history()
-			results = job.config_data["images_data"]
+			results = job.proj_data["images_data"]
 			for offset, field in ((0, "next_points"), (1, "prev_points")):
 				points = results[offset][field]
-				self.image_entries[index + offset][field] = [[float(x), float(y)] for x, y in points]
+				self.proj_image_entries[index + offset][field] = [[float(x), float(y)] for x, y in points]
 			self._normalize_boundary_points()
 			self.save_autosave()
 			self._show_pair(index)
@@ -361,12 +361,12 @@ class MainApp(QMainWindow):
 
 	def _path_for_entry(self, image_entry):
 		path = self._image_path(image_entry)
-		return path if path.is_absolute() else self.base_directory / path
+		return path if path.is_absolute() else self.proj_directory / path
 
 	def _organizer_files_changed(self, filenames):
 		entries_by_path = {
 			self._path_for_entry(entry).resolve(): entry
-			for entry in self.image_entries
+			for entry in self.proj_image_entries
 		}
 		updated_entries = []
 		for filename in filenames:
@@ -375,13 +375,13 @@ class MainApp(QMainWindow):
 			if entry is None:
 				entry = self._new_image_entry(path)
 			updated_entries.append(entry)
-		unchanged = len(updated_entries) == len(self.image_entries) and all(
-			new is old for new, old in zip(updated_entries, self.image_entries)
+		unchanged = len(updated_entries) == len(self.proj_image_entries) and all(
+			new is old for new, old in zip(updated_entries, self.proj_image_entries)
 		)
 		if not unchanged:
 			self._record_history()
-		self.image_entries = updated_entries
-		self.configData["images_data"] = updated_entries
+		self.proj_image_entries = updated_entries
+		self.projData["images_data"] = updated_entries
 		self._normalize_boundary_points()
 		self.save_autosave()
 		current_row = self.image_files_and_preview_area.image_files_organizer.image_list.currentRow()
@@ -390,10 +390,10 @@ class MainApp(QMainWindow):
 	def _snapshot(self):
 		snapshot = {
 			key: copy.deepcopy(value)
-			for key, value in self.configData.items() if key != "images_data"
+			for key, value in self.projData.items() if key != "images_data"
 		}
 		snapshot["images_data"] = []
-		for entry in self.image_entries:
+		for entry in self.proj_image_entries:
 			saved = {key: copy.deepcopy(value) for key, value in entry.items() if key != "image"}
 			saved["image"] = str(self._image_path(entry))
 			snapshot["images_data"].append(saved)
@@ -417,54 +417,54 @@ class MainApp(QMainWindow):
 	def _travel_history(self, source, target):
 		if not source:
 			return
-		current_images = {str(self._image_path(entry)): entry["image"] for entry in self.image_entries}
+		current_images = {str(self._image_path(entry)): entry["image"] for entry in self.proj_image_entries}
 		try:
-			restored = self._restore_snapshot(source[-1], current_images)
+			proj_restored = self._restore_snapshot(source[-1], current_images)
 		except ValueError as error:
 			print(error)
 			return
 		target.append(self._snapshot())
 		source.pop()
 		self._edit_burst_timer.stop()
-		self._apply_restored_config(restored)
+		self._apply_restored_config(proj_restored)
 
 	@staticmethod
 	def _restore_snapshot(snapshot, current_images):
-		restored = {
+		proj_restored = {
 			key: copy.deepcopy(value) for key, value in snapshot.items() if key != "images_data"
 		}
-		restored["images_data"] = []
+		proj_restored["images_data"] = []
 		for saved in snapshot["images_data"]:
 			entry = copy.deepcopy(saved)
 			path = entry["image"]
 			image = current_images.get(path)
 			entry["image"] = image if image is not None else imageClass(path)
-			restored["images_data"].append(entry)
-		return restored
+			proj_restored["images_data"].append(entry)
+		return proj_restored
 
-	def _apply_restored_config(self, restored):
+	def _apply_restored_config(self, proj_restored):
 		organizer = self.image_files_and_preview_area.image_files_organizer
 		row = organizer.image_list.currentRow()
-		self.configData.clear()
-		self.configData.update(restored)
-		self.video_settings = self.configData.setdefault("video_data", {})
-		self.image_entries = self.configData["images_data"]
+		self.projData.clear()
+		self.projData.update(proj_restored)
+		self.proj_video_settings = self.projData.setdefault("video_data", {})
+		self.proj_image_entries = self.projData["images_data"]
 		organizer.blockSignals(True)
-		organizer.set_image_files([self._path_for_entry(entry) for entry in self.image_entries])
+		organizer.set_image_files([self._path_for_entry(entry) for entry in self.proj_image_entries])
 		organizer.image_list.setCurrentRow(min(max(row, 0), organizer.image_list.count() - 1))
 		organizer.blockSignals(False)
 		self.save_autosave()
 		self._show_pair(max(0, organizer.image_list.currentRow()))
 
 	def _normalize_boundary_points(self):
-		if not self.image_entries:
+		if not self.proj_image_entries:
 			return False
 		changed = False
-		if self.image_entries[0].get("prev_points") is not None:
-			self.image_entries[0]["prev_points"] = None
+		if self.proj_image_entries[0].get("prev_points") is not None:
+			self.proj_image_entries[0]["prev_points"] = None
 			changed = True
-		if self.image_entries[-1].get("next_points") is not None:
-			self.image_entries[-1]["next_points"] = None
+		if self.proj_image_entries[-1].get("next_points") is not None:
+			self.proj_image_entries[-1]["next_points"] = None
 			changed = True
 		return changed
 
@@ -473,7 +473,7 @@ class MainApp(QMainWindow):
 		image = image_object.getCvImage()
 		if image is None:
 			raise ValueError(f"Unable to load image: {image_path}")
-		video_width, video_height = self.video_settings.get("size", (960, 540))
+		video_width, video_height = self.proj_video_settings.get("size", (960, 540))
 		video_aspect = float(video_width) / float(video_height)
 		image_height, image_width = image.shape[:2]
 		image_width = float(image_width)
@@ -524,13 +524,13 @@ class MainApp(QMainWindow):
 
 	def save_autosave(self):
 		self._schedule_video_preview()
-		if self.project_filename:
-			saveConfig(self.project_filename, self.configData)
+		if self.proj_filename:
+			saveConfig(self.proj_filename, self.projData)
 
 	def _paths_for_entries(self):
 		return [
 			str(self._path_for_entry(entry).resolve())
-			for entry in self.image_entries
+			for entry in self.proj_image_entries
 		]
 
 	def _select_pair_from_path(self, filename):
@@ -548,13 +548,13 @@ class MainApp(QMainWindow):
 		if paths:
 			selected_index = min(pair_index, len(paths) - 1)
 			self.image_files_and_preview_area.preview_area.set_image(
-				self.image_entries[selected_index]["image"]
+				self.proj_image_entries[selected_index]["image"]
 			)
 		else:
 			selected_index = 0
 			self.image_files_and_preview_area.preview_area.set_image("")
 		organizer.set_highlighted_paths(paths[pair_index:pair_index + 2] if len(paths) > 1 else [])
-		self.image_fusion_editor.set_pair(self.image_entries, paths, pair_index)
+		self.image_fusion_editor.set_pair(self.proj_image_entries, paths, pair_index)
 
 	def _navigate_pair(self, pair_index):
 		organizer = self.image_files_and_preview_area.image_files_organizer
@@ -564,16 +564,16 @@ class MainApp(QMainWindow):
 			organizer.image_list.setCurrentRow(pair_index)
 
 	def _update_fusion_preview(self, pair_index, size_alpha, blend_alpha):
-		if not 0 <= pair_index < len(self.image_entries) - 1:
+		if not 0 <= pair_index < len(self.proj_image_entries) - 1:
 			self.image_files_and_preview_area.preview_area.set_fusion_frame(None)
 			return
 		try:
 			frame = createBlendedFrame(
-				self.configData,
+				self.projData,
 				pair_index,
 				size_alpha,
 				blend_alpha,
-				interpolationMethod=self.video_settings.get("interpolation_method", "log"),
+				interpolationMethod=self.proj_video_settings.get("interpolation_method", "log"),
 			)
 		except Exception as error:
 			print(error)
@@ -584,21 +584,21 @@ class MainApp(QMainWindow):
 		self.image_files_and_preview_area.preview_area.set_fusion_frame(frame)
 
 	def _alpha_range_edited(self, pair_index, alpha_range):
-		if not 0 <= pair_index < len(self.image_entries):
+		if not 0 <= pair_index < len(self.proj_image_entries):
 			return
 		self._record_history(coalesce=True)
-		self.image_entries[pair_index]["alpha_range"] = list(alpha_range)
+		self.proj_image_entries[pair_index]["alpha_range"] = list(alpha_range)
 		self.save_autosave()
 
 	def _image_edited(self, image_index, field, value):
-		if image_index >= len(self.image_entries):
+		if image_index >= len(self.proj_image_entries):
 			return
 		if field == "prev_points" and image_index == 0:
 			return
-		if field == "next_points" and image_index == len(self.image_entries) - 1:
+		if field == "next_points" and image_index == len(self.proj_image_entries) - 1:
 			return
 		self._record_history(coalesce=True)
-		entry = self.image_entries[image_index]
+		entry = self.proj_image_entries[image_index]
 		if field == "frame":
 			upper_left = value["upper_left"]
 			entry["frame"] = [
@@ -614,27 +614,27 @@ class MainApp(QMainWindow):
 def main() -> int:
 	app = QApplication(sys.argv)
 	app_directory = Path(__file__).resolve().parent
-	app_config_path = app_directory / "zoomer.cfg"
+	cfg_path = app_directory / "zoomer.cfg"
 	try:
-		with app_config_path.open("r", encoding="utf-8") as config_file:
-			app_config = {**APP_CONFIG_DEFAULTS, **json.load(config_file)}
+		with cfg_path.open("r", encoding="utf-8") as cfg_file:
+			cfgData = {**CFG_DEFAULTS, **json.load(cfg_file)}
 	except (OSError, json.JSONDecodeError):
-		app_config = dict(APP_CONFIG_DEFAULTS)
-	window = MainApp(app_config=app_config, app_config_path=app_config_path)
+		cfgData = dict(CFG_DEFAULTS)
+	window = MainApp(cfg_data=cfgData, cfg_path=cfg_path)
 	window.set_image_workspace([], app_directory)
-	last_project = app_config.get("last_project", "")
-	if app_config.get("auto_open_last_project") and last_project and Path(last_project).is_file():
-		window.project_filename = last_project
+	cfg_last_project = cfgData.get("last_project", "")
+	if cfgData.get("auto_open_last_project") and cfg_last_project and Path(cfg_last_project).is_file():
+		window.proj_filename = cfg_last_project
 		try:
-			loaded_project = loadConfig(last_project)
-			loaded_project.setdefault("project_name", Path(last_project).stem)
-			window.base_directory = Path(last_project).resolve().parent
-			window._apply_restored_config(loaded_project)
+			proj_loaded = loadConfig(cfg_last_project)
+			proj_loaded.setdefault("project_name", Path(cfg_last_project).stem)
+			window.proj_directory = Path(cfg_last_project).resolve().parent
+			window._apply_restored_config(proj_loaded)
 			if window._normalize_boundary_points():
 				window.save_autosave()
-			window._remember_project(last_project)
+			window._remember_project(cfg_last_project)
 		except (OSError, ValueError, KeyError, json.JSONDecodeError) as error:
-			QMessageBox.warning(window, "Open project", f"Unable to open {last_project}:\n{error}")
+			QMessageBox.warning(window, "Open project", f"Unable to open {cfg_last_project}:\n{error}")
 			QTimer.singleShot(0, window.new_project)
 	else:
 		QTimer.singleShot(0, window.new_project)

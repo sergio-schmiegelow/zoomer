@@ -835,9 +835,9 @@ class imageFusionEditor(QWidget):
 		super().__init__(parent)
 		self.setObjectName("imageFusionEditor")
 		self.pair_index = 0
-		self.image_entries = []
+		self.proj_image_entries = []
 		self.image_paths = []
-		self.frame_crosshair_enabled = True
+		self.cfg_frame_crosshair_enabled = True
 		self.layout = QVBoxLayout(self)
 		self.navigation = QHBoxLayout()
 		self.previous_button = QPushButton("Previous pair")
@@ -922,7 +922,7 @@ class imageFusionEditor(QWidget):
 		self._emit_fusion_preview_request()
 
 	def _emit_fusion_preview_request(self):
-		if len(self.image_entries) < 2:
+		if len(self.proj_image_entries) < 2:
 			return
 		fusion_step = self.fusion_step_slider.value() / 100
 		minimum_alpha, maximum_alpha = (
@@ -947,14 +947,14 @@ class imageFusionEditor(QWidget):
 			self.alignment_spinner.start()
 		else:
 			self.alignment_spinner.stop()
-		self.find_alignment_button.setEnabled(not running and len(self.image_entries) > 1)
+		self.find_alignment_button.setEnabled(not running and len(self.proj_image_entries) > 1)
 		self.previous_button.setEnabled(not running and self.pair_index > 0)
 		self.next_button.setEnabled(
-			not running and self.pair_index < len(self.image_entries) - 2
+			not running and self.pair_index < len(self.proj_image_entries) - 2
 		)
 
-	def set_pair(self, image_entries, image_paths, pair_index):
-		self.image_entries = image_entries
+	def set_pair(self, proj_image_entries, image_paths, pair_index):
+		self.proj_image_entries = proj_image_entries
 		self.image_paths = image_paths
 		self.pair_index = pair_index
 		while self.pair_splitter.count():
@@ -962,7 +962,7 @@ class imageFusionEditor(QWidget):
 			self.pair_splitter.widget(0).setParent(None)
 			widget.deleteLater()
 
-		pair_count = max(0, len(image_entries) - 1)
+		pair_count = max(0, len(proj_image_entries) - 1)
 		if pair_count == 0:
 			self.pair_label.setText("Add at least two images to edit a pair")
 			self.previous_button.setEnabled(False)
@@ -973,7 +973,7 @@ class imageFusionEditor(QWidget):
 			return
 
 		self.pair_index = max(0, min(pair_index, pair_count - 1))
-		alpha_range = image_entries[self.pair_index].get("alpha_range", [0.0, 1.0])
+		alpha_range = proj_image_entries[self.pair_index].get("alpha_range", [0.0, 1.0])
 		self.alpha_range_slider.setValues(
 			round(float(alpha_range[0]) * 100),
 			round(float(alpha_range[1]) * 100),
@@ -989,7 +989,7 @@ class imageFusionEditor(QWidget):
 		self.find_alignment_button.setEnabled(True)
 		for offset, points_field in ((0, "next_points"), (1, "prev_points")):
 			entry_index = self.pair_index + offset
-			entry = image_entries[entry_index]
+			entry = proj_image_entries[entry_index]
 			path = image_paths[entry_index]
 			column = QWidget(self.pair_splitter)
 			column_layout = QVBoxLayout(column)
@@ -1049,7 +1049,7 @@ class imageFusionEditor(QWidget):
 			zoom_points_button.clicked.connect(editor.zoom_to_points)
 			zoom_frame_button.clicked.connect(editor.zoom_to_frame)
 			editor.setObjectName("imageMarkersEditor")
-			editor.frame_crosshair_enabled = self.frame_crosshair_enabled
+			editor.cfg_frame_crosshair_enabled = self.cfg_frame_crosshair_enabled
 			editor.frameChanged.connect(
 				lambda value, index=entry_index: self.imageEdited.emit(index, "frame", value)
 			)
@@ -1090,10 +1090,10 @@ class imageFusionEditor(QWidget):
 		return button
 
 	def set_frame_crosshair_enabled(self, enabled):
-		self.frame_crosshair_enabled = bool(enabled)
+		self.cfg_frame_crosshair_enabled = bool(enabled)
 		for index in range(self.pair_splitter.count()):
 			column = self.pair_splitter.widget(index)
-			column.editor.frame_crosshair_enabled = self.frame_crosshair_enabled
+			column.editor.cfg_frame_crosshair_enabled = self.cfg_frame_crosshair_enabled
 			column.editor.update()
 
 	def set_editor_points(self, image_index, points_field, points):
@@ -1111,7 +1111,7 @@ class imageFusionEditor(QWidget):
 			self.pairRequested.emit(self.pair_index - 1)
 
 	def _next_pair(self):
-		if self.pair_index < len(self.image_entries) - 2:
+		if self.pair_index < len(self.proj_image_entries) - 2:
 			self.pairRequested.emit(self.pair_index + 1)
 
 
@@ -1285,7 +1285,7 @@ class imageMarkersEditor(QWidget):
 		self._drag_mode = None
 		self._drag_point = None
 		self._last_mouse_position = QPointF()
-		self.frame_crosshair_enabled = True
+		self.cfg_frame_crosshair_enabled = True
 		self._marker_animation_clock = QElapsedTimer()
 		self._marker_animation_clock.start()
 		self._marker_animation_timer = QTimer(self)
@@ -1401,7 +1401,7 @@ class imageMarkersEditor(QWidget):
 		):
 			painter.setPen(QPen(frame_color, frame_width))
 			painter.drawRect(frame_rect)
-		if self.frame_crosshair_enabled:
+		if self.cfg_frame_crosshair_enabled:
 			center = self.image_to_widget(QPointF(
 				self.frame_x + self.frame_width / 2,
 				self.frame_y + self.frame_height / 2,
@@ -1445,7 +1445,7 @@ class imageMarkersEditor(QWidget):
 			QPointF(self.frame_x + self.frame_width, self.frame_y + self.frame_height)
 		)
 		tolerance = 9
-		if self.frame_crosshair_enabled:
+		if self.cfg_frame_crosshair_enabled:
 			center = self.image_to_widget(QPointF(
 				self.frame_x + self.frame_width / 2,
 				self.frame_y + self.frame_height / 2,
