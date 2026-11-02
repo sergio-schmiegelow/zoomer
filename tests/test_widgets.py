@@ -236,6 +236,15 @@ class TestVideoPreviewWidget:
         preview.pause()
         assert not preview.is_playing()
 
+    def test_slider_is_enabled_when_export_state_clears(self, preview):
+        preview.set_video(5, 10, lambda position: None)
+        preview.set_exporting(True)
+        assert not preview.slider.isEnabled()
+        preview.set_exporting(False)
+        assert preview.slider.isEnabled()
+        preview.slider.setValue(3)
+        assert preview.slider.value() == 3
+
     def test_error_disables_controls_and_shows_message(self, preview):
         preview.set_video(5, 10, lambda position: None)
         preview.set_error("broken")

@@ -1,9 +1,11 @@
 import json
+import time
 
 import numpy as np
 import pytest
+from PyQt6.QtCore import QTimer
 from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QApplication, QFileDialog
+from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from conftest import triangle
 from zoomer import gui
@@ -246,6 +248,126 @@ class TestVideoPreview:
         main.set_image_workspace([], tmp_path)
         main._refresh_video_preview()
         assert "two images" in self.preview(main).canvas.text()
+
+
+class TestVideoExport:
+    def prepare_generator(self, window, monkeypatch, frame_count=4):
+        QTest.qWait(300)
+        generator = window._video_generator
+        calls = []
+
+        monkeypatch.setattr(
+            generator,
+            "perform_video_calculations",
+            lambda: (calls.append("calculate") or True, None),
+        )
+        monkeypatch.setattr(
+            generator,
+            "get_total_frames",
+            lambda: calls.append("total") or frame_count,
+        )
+        monkeypatch.setattr(
+            generator,
+            "open_video_writer",
+            lambda: calls.append("open") or True,
+        )
+
+        def generate(position):
+            calls.append(("generate", position))
+            return np.full((90, 160, 3), position, dtype=np.uint8)
+
+        monkeypatch.setattr(
+            generator, "generate_video_frame_on_position", generate
+        )
+        monkeypatch.setattr(
+            generator,
+            "save_video_frame",
+            lambda frame: calls.append(("save", int(frame[0, 0, 0]))),
+        )
+        monkeypatch.setattr(
+            generator,
+            "close_video_writer",
+            lambda: calls.append("close"),
+        )
+        return generator, calls
+
+    def test_export_uses_preview_generator_and_updates_video_tab(
+        self, window, tmp_path, monkeypatch
+    ):
+        generator, calls = self.prepare_generator(window, monkeypatch)
+        monkeypatch.setattr(
+            QFileDialog,
+            "getSaveFileName",
+            staticmethod(lambda *a, **k: (str(tmp_path / "export.avi"), "")),
+        )
+        monkeypatch.setattr(
+            QMessageBox,
+            "information",
+            staticmethod(lambda *args, **kwargs: None),
+        )
+
+        window.select_export_filename()
+        QTest.qWait(500)
+
+        preview_area = window.image_files_and_preview_area.preview_area
+        preview = preview_area.video_preview
+        assert preview_area.tabs.currentWidget() is preview
+        assert window._video_generator is generator
+        assert generator.filename == str(tmp_path / "export.avi")
+        assert calls[:3] == ["calculate", "total", "open"]
+        assert [call for call in calls if isinstance(call, tuple)] == [
+            ("generate", 0),
+            ("save", 0),
+            ("generate", 1),
+            ("save", 1),
+            ("generate", 2),
+            ("save", 2),
+            ("generate", 3),
+            ("save", 3),
+        ]
+        assert calls[-1] == "close"
+        assert preview.canvas._source_pixmap.width() == 160
+        assert preview.slider.value() == 3
+        assert preview.slider.isEnabled()
+        assert not preview.export_banner.isVisible()
+        assert window.file_menu_action.isEnabled()
+
+    def test_export_interrupt_stops_after_current_frame_and_closes_writer(
+        self, window, tmp_path, monkeypatch
+    ):
+        _generator, calls = self.prepare_generator(
+            window, monkeypatch, frame_count=20
+        )
+
+        def slow_generate(position):
+            time.sleep(0.08)
+            calls.append(("generate", position))
+            return np.full((90, 160, 3), position, dtype=np.uint8)
+
+        monkeypatch.setattr(
+            window._video_generator,
+            "generate_video_frame_on_position",
+            slow_generate,
+        )
+        monkeypatch.setattr(
+            QFileDialog,
+            "getSaveFileName",
+            staticmethod(lambda *a, **k: (str(tmp_path / "cancel.avi"), "")),
+        )
+        window.select_export_filename()
+        preview = (
+            window.image_files_and_preview_area.preview_area.video_preview
+        )
+        assert preview.export_banner.isVisible()
+        QTimer.singleShot(20, preview.export_interrupt_button.click)
+        QTest.qWait(350)
+
+        generated = [call for call in calls if isinstance(call, tuple)]
+        assert 0 < len(generated) < 40
+        assert calls[-1] == "close"
+        assert not preview.export_banner.isVisible()
+        assert "interrupted" in preview.position_label.text().lower()
+        assert window.file_menu_action.isEnabled()
 
 
 class TestAlignment:

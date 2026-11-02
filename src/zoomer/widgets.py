@@ -497,11 +497,14 @@ class _FitImageLabel(QLabel):
 
 
 class VideoPreviewWidget(QWidget):
+    export_interrupted = pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._frame_provider = None
         self._total_frames = 0
         self._needs_render = False
+        self._exporting = False
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._advance_playback)
         layout = QVBoxLayout(self)
@@ -548,6 +551,24 @@ class VideoPreviewWidget(QWidget):
             "videoEndButton",
             "Go to end",
             style.standardIcon(QStyle.StandardPixmap.SP_MediaSkipForward),
+        )
+        self.export_banner = QFrame(self)
+        self.export_banner.setObjectName("videoExportBanner")
+        self.export_banner.setStyleSheet(
+            "QFrame#videoExportBanner { background-color: #3a3320;"
+            " border: 1px solid #c9a227; border-radius: 4px; }"
+            "QFrame#videoExportBanner QLabel { color: #ffe9a6; }"
+        )
+        export_layout = QHBoxLayout(self.export_banner)
+        export_layout.setContentsMargins(8, 4, 8, 4)
+        self.export_banner_label = QLabel("Exporting video file")
+        self.export_interrupt_button = QPushButton("Interrupt")
+        export_layout.addWidget(self.export_banner_label, 1)
+        export_layout.addWidget(self.export_interrupt_button)
+        self.export_banner.hide()
+        layout.addWidget(self.export_banner)
+        self.export_interrupt_button.clicked.connect(
+            lambda _checked=False: self.export_interrupted.emit()
         )
         buttons_row = QHBoxLayout()
         buttons_row.addStretch(1)
@@ -624,6 +645,37 @@ class VideoPreviewWidget(QWidget):
         self.canvas.setText(message)
         self._update_controls()
 
+    def set_exporting(self, exporting):
+        self._exporting = bool(exporting)
+        self.export_banner.setVisible(exporting)
+        self.export_interrupt_button.setEnabled(exporting)
+        if exporting:
+            self.pause()
+        self._update_controls()
+
+    def set_export_progress(self, frame, position, total_frames):
+        self.slider.blockSignals(True)
+        self.slider.setValue(position)
+        self.slider.blockSignals(False)
+        self.export_banner_label.setText(
+            f"Exporting video file ({position + 1} / {total_frames})"
+        )
+        self.position_label.setText(
+            f"Exporting frame {position + 1} / {total_frames}"
+        )
+        if frame is None or not hasattr(frame, "shape"):
+            return
+        pixmap = QPixmap.fromImage(_array_to_qimage(frame))
+        self.canvas.set_source_pixmap(pixmap, keep_view=True)
+
+    def set_export_stopping(self):
+        self.export_banner_label.setText("Stopping export after current frame...")
+        self.export_interrupt_button.setEnabled(False)
+
+    def finish_export(self):
+        self.export_banner.hide()
+        self._update_controls()
+
     def play(self):
         if self._total_frames < 2:
             return
@@ -648,20 +700,25 @@ class VideoPreviewWidget(QWidget):
         self.slider.setValue(self.slider.value() + 1)
 
     def _update_controls(self):
+        if not self.export_banner.isVisible():
+            self._exporting = False
         has_video = self._frame_provider is not None and self._total_frames > 0
         playing = self.is_playing()
-        self.slider.setEnabled(has_video)
+        self.slider.setEnabled(has_video and not self._exporting)
         for button in (
             self.start_button,
             self.previous_button,
             self.next_button,
             self.end_button,
         ):
-            button.setEnabled(has_video and not playing)
+            button.setEnabled(has_video and not playing and not self._exporting)
         self.play_button.setEnabled(
-            has_video and self._total_frames > 1 and not playing
+            has_video
+            and self._total_frames > 1
+            and not playing
+            and not self._exporting
         )
-        self.pause_button.setEnabled(playing)
+        self.pause_button.setEnabled(playing and not self._exporting)
         if has_video:
             self.position_label.setText(
                 f"Frame {self.slider.value() + 1} / {self._total_frames}"

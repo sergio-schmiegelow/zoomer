@@ -40,3 +40,4 @@ select = ["E", "W", "F", "N", "I"]
 [tool.ruff.lint.per-file-ignores]
 # Qt requires camelCase overrides such as paintEvent and mousePressEvent.
 "src/zoomer/widgets.py" = ["N802"]
+"src/zoomer/gui.py" = ["N802"]

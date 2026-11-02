@@ -727,7 +727,10 @@ class VideoGenerator:
         self.filename = filename
 
     # ---------------------------------------------------------------------
-    def open_video(self):
+    def set_video_filename(self, filename: str):
+        self.filename = filename
+    # ---------------------------------------------------------------------
+    def open_video_writer(self):
         self._video_writer = cv.VideoWriter(
             self.filename,
             cv.VideoWriter_fourcc(*"XVID"),
@@ -747,7 +750,7 @@ class VideoGenerator:
             self._video_writer.write(frame)
 
     # ---------------------------------------------------------------------
-    def close_video(self):
+    def close_video_writer(self):
         if hasattr(self, "_video_writer") and self._video_writer.isOpened():
             self._video_writer.release()
 
@@ -802,11 +805,12 @@ class VideoGenerator:
         success, error_msg = self.perform_video_calculations()
         if not success:
             return False, error_msg
-        if not self.open_video():
+        if not self.open_video_writer():
             return False, "Failed to open video"
         for first_index, size_alpha in self._indexes_size_alphas_list:
             video_frame = self.generate_video_frame(first_index, size_alpha)
             self.save_video_frame(video_frame)
+        self.close_video_writer()
         return True, None
 
 

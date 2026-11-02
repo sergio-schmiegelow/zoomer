@@ -127,7 +127,7 @@ class TestVideoGenerator:
             make_proj_data(tmp_path), str(target)
         )
         success, _error = generator.generate_full_video()
-        generator.close_video()
+        generator.close_video_writer()
         assert success
         assert target.stat().st_size > 0
 

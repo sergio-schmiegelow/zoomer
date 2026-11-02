@@ -6,6 +6,7 @@ import random
 import sys
 from collections import deque
 from pathlib import Path
+from threading import Event
 
 from PyQt6.QtCore import Qt, QThread, QTimer
 from PyQt6.QtGui import QKeySequence
@@ -50,6 +51,44 @@ class _AlignmentJob(QThread):
             self.error = error
 
 
+class _VideoExportJob(QThread):
+    def __init__(self, video_generator, total_frames, parent=None):
+        super().__init__(parent)
+        self.video_generator = video_generator
+        self.total_frames = total_frames
+        self._cancel_event = Event()
+        self.pending_frames = deque()
+        self.error_message = ""
+        self.cancelled = False
+        self.generated_frames = 0
+
+    def interrupt(self):
+        self._cancel_event.set()
+
+    def run(self):
+        try:
+            if not self.video_generator.open_video_writer():
+                raise RuntimeError("Failed to open video writer")
+            for position in range(self.total_frames):
+                if self._cancel_event.is_set():
+                    self.cancelled = True
+                    break
+                frame = self.video_generator.generate_video_frame_on_position(
+                    position
+                )
+                if frame is None:
+                    raise RuntimeError(
+                        f"Unable to generate video frame {position + 1}"
+                    )
+                self.video_generator.save_video_frame(frame)
+                self.generated_frames += 1
+                self.pending_frames.append((frame, position))
+        except Exception as error:
+            self.error_message = str(error)
+        finally:
+            self.video_generator.close_video_writer()
+
+
 CFG_DEFAULTS = {
     "frame_crosshair": True,
     "auto_open_last_project": False,
@@ -80,11 +119,14 @@ class MainApp(QMainWindow):
         self.proj_image_entries = []
         self._alignment_job = None
         self._alignment_jobs = set()
+        self._video_export_job = None
         self._video_generator = None
         self._video_preview_timer = QTimer(self)
         self._video_preview_timer.setSingleShot(True)
         self._video_preview_timer.setInterval(200)
         self._video_preview_timer.timeout.connect(self._refresh_video_preview)
+        self._video_export_timer = QTimer(self)
+        self._video_export_timer.timeout.connect(self._drain_export_frames)
         self._undo_stack = deque(maxlen=HISTORY_LIMIT)
         self._redo_stack = deque(maxlen=HISTORY_LIMIT)
         # Drags emit many edits; one burst becomes a single history entry.
@@ -98,6 +140,7 @@ class MainApp(QMainWindow):
 
     def _create_menus(self):
         file_menu = self.menuBar().addMenu("&File")
+        self.file_menu_action = file_menu.menuAction()
         open_action = file_menu.addAction("Open project")
         open_action.setShortcut(QKeySequence.StandardKey.Open)
         open_action.triggered.connect(self.open_project)
@@ -109,6 +152,7 @@ class MainApp(QMainWindow):
         new_action.triggered.connect(self.new_project)
 
         edit_menu = self.menuBar().addMenu("&Edit")
+        self.edit_menu_action = edit_menu.menuAction()
         undo_action = edit_menu.addAction("Undo")
         undo_action.setShortcut(QKeySequence("Ctrl+Z"))
         undo_action.triggered.connect(self.undo)
@@ -118,9 +162,11 @@ class MainApp(QMainWindow):
 
         video_action = self.menuBar().addAction("&Video")
         video_action.triggered.connect(self.open_video_settings)
+        self.video_menu_action = video_action
 
         export_action = self.menuBar().addAction("&Export")
         export_action.triggered.connect(self.select_export_filename)
+        self.export_menu_action = export_action
 
         options_menu = self.menuBar().addMenu("&Options")
         self.cfg_frame_crosshair_action = options_menu.addAction(
@@ -272,6 +318,8 @@ class MainApp(QMainWindow):
             self.save_autosave()
 
     def select_export_filename(self, _checked=False):
+        if self._video_export_job is not None:
+            return
         filename, _selected_filter = QFileDialog.getSaveFileName(
             self,
             "Export video",
@@ -283,6 +331,110 @@ class MainApp(QMainWindow):
             if export_path.suffix.lower() != ".avi":
                 export_path = export_path.with_suffix(".avi")
             self.export_filename = str(export_path)
+            self._start_video_export()
+
+    def _start_video_export(self):
+        if len(self.proj_image_entries) < 2:
+            QMessageBox.warning(
+                self,
+                "Export video",
+                "Add at least two images before exporting.",
+            )
+            return
+        if self._video_generator is None:
+            self._refresh_video_preview()
+        generator = self._video_generator
+        if generator is None:
+            QMessageBox.warning(
+                self, "Export video", "The video preview is not ready."
+            )
+            return
+
+        generator.set_video_filename(self.export_filename)
+        success, error_message = generator.perform_video_calculations()
+        if not success:
+            QMessageBox.warning(
+                self,
+                "Export video",
+                error_message or "Unable to calculate video frames.",
+            )
+            return
+
+        total_frames = generator.get_total_frames()
+        self._video_preview_timer.stop()
+        preview_area = self.image_files_and_preview_area.preview_area
+        preview_area.tabs.setCurrentWidget(preview_area.video_preview)
+        preview_area.video_preview.set_exporting(True)
+        self._set_export_locked(True)
+
+        job = _VideoExportJob(generator, total_frames, self)
+        job.finished.connect(self._video_export_finished)
+        self._video_export_job = job
+        self._video_export_timer.start(16)
+        job.start()
+
+    def _drain_export_frames(self):
+        job = self._video_export_job
+        if job is None:
+            self._video_export_timer.stop()
+            return
+        preview = self.image_files_and_preview_area.preview_area.video_preview
+        while job.pending_frames:
+            frame, position = job.pending_frames.popleft()
+            preview.set_export_progress(frame, position, job.total_frames)
+
+    def _interrupt_video_export(self):
+        if self._video_export_job is None:
+            return
+        self._video_export_job.interrupt()
+        self.image_files_and_preview_area.preview_area.video_preview.set_export_stopping()
+
+    def _video_export_finished(self):
+        job = self._video_export_job
+        if job is None:
+            return
+        self._drain_export_frames()
+        self._video_export_timer.stop()
+        self._video_export_job = None
+        preview = self.image_files_and_preview_area.preview_area.video_preview
+        preview.set_exporting(False)
+        preview.finish_export()
+        self._set_export_locked(False)
+        if job is not None:
+            job.deleteLater()
+
+        if job.error_message:
+            print(job.error_message)
+            QMessageBox.warning(self, "Export video", job.error_message)
+        elif job.cancelled:
+            preview.position_label.setText(
+                f"Export interrupted at frame {job.generated_frames}"
+            )
+        else:
+            QMessageBox.information(
+                self,
+                "Export video",
+                f"Video exported to {self.export_filename}",
+            )
+
+    def _set_export_locked(self, locked):
+        for action in (
+            self.file_menu_action,
+            self.edit_menu_action,
+            self.video_menu_action,
+            self.export_menu_action,
+        ):
+            action.setEnabled(not locked)
+        self.image_files_and_preview_area.image_files_organizer.setEnabled(
+            not locked
+        )
+        self.image_fusion_edition_area.setEnabled(not locked)
+
+    def closeEvent(self, event):
+        if self._video_export_job is not None:
+            self._video_export_job.interrupt()
+            self._video_export_job.wait()
+        super().closeEvent(event)
 
     def set_image_workspace(self, proj_image_entries, proj_directory):
         self.proj_image_entries = self.proj_data["images_data"]
@@ -313,6 +465,9 @@ class MainApp(QMainWindow):
         )
         self.image_fusion_editor.alignment_interrupted.connect(
             self._interrupt_alignment
+        )
+        self.image_files_and_preview_area.preview_area.video_preview.export_interrupted.connect(
+            self._interrupt_video_export
         )
         self._fusion_preview_timer = QTimer(self)
         self._fusion_preview_timer.setSingleShot(True)
