@@ -23,12 +23,14 @@ from .backend import (
     VideoGenerator,
     auto_align_images,
     create_blended_frame,
+    get_supported_video_formats,
     load_config,
     save_config,
 )
 from .widgets import (
     ImageFilesAndPreviewArea,
     ImageFusionEditionArea,
+    NewProjectDialog,
     VideoSettingsDialog,
 )
 
@@ -266,7 +268,7 @@ class MainApp(QMainWindow):
             self._remember_project(self.proj_filename)
 
     def new_project(self, _checked=False):
-        dialog = VideoSettingsDialog({}, self, project_mode=True)
+        dialog = NewProjectDialog({}, self)
         if not dialog.exec():
             return
         project_name = dialog.project_name()
@@ -320,16 +322,33 @@ class MainApp(QMainWindow):
     def select_export_filename(self, _checked=False):
         if self._video_export_job is not None:
             return
+        selected_format = self.proj_video_settings.get("format", "avi")
+        format_info = next(
+            (
+                supported_format
+                for supported_format in get_supported_video_formats()
+                if supported_format[0] == selected_format
+            ),
+            None,
+        )
+        if format_info is None:
+            QMessageBox.warning(
+                self,
+                "Export video",
+                "Selected video format is unsupported by this OpenCV build.",
+            )
+            return
+        extension, format_label, _fourcc = format_info
         filename, _selected_filter = QFileDialog.getSaveFileName(
             self,
             "Export video",
-            "output.avi",
-            "AVI video (*.avi);;All files (*)",
+            f"output.{extension}",
+            f"{format_label};;All files (*)",
         )
         if filename:
             export_path = Path(filename)
-            if export_path.suffix.lower() != ".avi":
-                export_path = export_path.with_suffix(".avi")
+            if export_path.suffix.lower() != f".{extension}":
+                export_path = export_path.with_suffix(f".{extension}")
             self.export_filename = str(export_path)
             self._start_video_export()
 

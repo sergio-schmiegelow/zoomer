@@ -19,7 +19,8 @@ objects it is given); `backend` imports neither.
 | `load_config` / `save_config` | Read and write `.zmr` files; `save_config` converts `ImageClass` objects to paths without mutating the input |
 | `create_blended_frame` | Renders the cross-fade of image `index` and `index + 1` for a `size_alpha` and `blend_alpha` |
 | `auto_align_images` | Crops both frames, matches SIFT features and stores the three best matches as the pair's markers |
-| `VideoGenerator` | `perform_video_calculations()` computes the cumulative zoom and the per-frame `(image index, size_alpha)` list; `get_total_frames()`, `generate_video_frame_on_position()` and `generate_full_video()` use it |
+| `get_supported_video_formats` | Probes common container/FourCC candidates by writing a temporary frame, returning only formats supported by the installed OpenCV build |
+| `VideoGenerator` | `perform_video_calculations()` computes the cumulative zoom and per-frame positions; writer methods encode using the selected `video_data.format` |
 
 Helpers prefixed with an underscore (affine transforms, marker
 interpolation, zoom computation) are internal.
@@ -40,7 +41,8 @@ message. Frames are linearly spaced in `log(zoom)`.
 | `ImageFusionEditor` | Hosts two `ImageMarkersEditor`s plus the sliders and the alignment banner; emits edit requests |
 | `ImageMarkersEditor` | Zoomable canvas with the draggable frame and markers; the marker outline pulses once per second |
 | `FusionStepSlider`, `AlphaRangeSlider` | Painted sliders sharing one horizontal grid |
-| `VideoSettingsDialog` | Video size, frame rate, duration, interpolation; also the *New project* dialog |
+| `VideoSettingsWidget` | Shared output format, video size, frame rate, duration and interpolation controls |
+| `VideoSettingsDialog` / `NewProjectDialog` | Embed `VideoSettingsWidget` for editing or project creation |
 
 Widgets are decoupled from the data: they emit signals (`image_edited`,
 `alpha_range_edited`, `fusion_preview_requested`, ...) and `MainApp` applies
@@ -74,6 +76,30 @@ shallow copies of the two entries. The live project changes only if the job
 succeeds, was not interrupted and the entries still exist. Interrupting hides
 the banner; because OpenCV cannot be stopped mid-call, the thread finishes
 quietly and its result is discarded.
+
+### Video export
+
+The preview creates and retains one `VideoGenerator` for the live `proj_data`.
+After the user chooses an output filename, `MainApp` updates that generator's
+filename, recalculates frame positions, and starts `_VideoExportJob` on a
+`QThread`. The job uses the separated generator methods to open the writer,
+generate each frame by position, save it, and close the writer in `finally`.
+
+The worker puts completed frames in a thread-safe deque. A GUI-thread timer
+drains the deque, updates the Video preview canvas and progress label, and
+keeps Qt widget access on the main thread. The Interrupt button sets an event
+checked between frames, so the current frame completes before the writer is
+closed. While exporting, project-editing menus and widgets are disabled, as
+are preview transport controls. Completion restores them and re-enables the
+video scrubber for manual seeking.
+
+## Shared video settings
+
+`VideoSettingsWidget` owns the video-format, size, frame-rate, duration and
+interpolation controls. `VideoSettingsDialog` embeds it for edits; the
+`NewProjectDialog` embeds the same widget alongside the project-name field.
+The detected output-format list is cached for the process lifetime because
+OpenCV does not expose a complete container-format enumeration API.
 
 ### Start-up
 

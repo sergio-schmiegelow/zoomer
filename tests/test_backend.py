@@ -96,6 +96,26 @@ def test_points_mean_size_ratio():
 
 
 class TestVideoGenerator:
+    def test_supported_video_formats_include_extension_and_fourcc(self):
+        formats = backend.get_supported_video_formats()
+        assert formats
+        assert len(
+            {extension for extension, _label, _fourcc in formats}
+        ) == len(formats)
+        assert all(len(fourcc) == 4 for _ext, _label, fourcc in formats)
+
+    def test_selected_video_format_opens_writer(self, tmp_path):
+        proj = make_proj_data(tmp_path)
+        selected_format = backend.get_supported_video_formats()[0][0]
+        proj["video_data"]["format"] = selected_format
+        target = tmp_path / f"selected.{selected_format}"
+        generator = backend.VideoGenerator(proj, str(target))
+        assert generator.open_video_writer()
+        frame = np.zeros((90, 160, 3), dtype=np.uint8)
+        generator.save_video_frame(frame)
+        generator.close_video_writer()
+        assert target.is_file() and target.stat().st_size > 0
+
     def test_total_frames_is_fps_times_duration(self, tmp_path):
         generator = backend.VideoGenerator(make_proj_data(tmp_path), "")
         success, error = generator.perform_video_calculations()

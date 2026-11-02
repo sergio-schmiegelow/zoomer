@@ -21,8 +21,8 @@ The window title shows the current project name.
 | File | Save project as | Save under a new name (`.zmr` is enforced) |
 | File | New project | Ask for a name and the video settings, then a file |
 | Edit | Undo / Redo (`Ctrl+Z` / `Ctrl+Y`) | Last 10 project edits |
-| Video | | Video size, frame rate, duration and interpolation method |
-| Export | | Choose the output file name (rendering is not wired up yet) |
+| Video | | Output format, video size, frame rate, duration and interpolation |
+| Export | | Choose an output AVI file and render the project |
 | Options | Frame crosshair | Show the frame centre; dragging it moves the frame |
 | Options | Auto open last project | Reopen the previous project on start |
 
@@ -54,3 +54,24 @@ The window title shows the current project name.
    shrink between images, is reported on the preview canvas.
 
 Every change is saved to the project file immediately.
+
+## Exporting a video
+
+1. Select **Export** and choose the output filename. Zoomer enforces the
+   `.avi` extension.
+2. Zoomer switches to the **Video preview** tab and shows an
+   **Exporting video file** banner with the current frame count. Each frame
+   is displayed as it is written.
+3. Use **Interrupt** to stop after the current frame. The writer is closed
+   and the AVI contains the frames completed so far. The project controls and
+   video-preview scrubber are restored when export ends.
+
+The output format selected in **Video** is used for export, and the extension
+is corrected to match it. Formats are offered only when the current OpenCV
+build can open a writer and encode a probe frame for that container/codec.
+The available list can differ across platforms and OpenCV builds.
+
+Export renders as quickly as frame generation permits; the playback FPS
+limit applies to preview playback, not file export. If the writer cannot be
+opened, frame generation fails, or export is interrupted, the result may be
+a partial or empty file; an error message is shown for failures.

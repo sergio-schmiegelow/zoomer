@@ -5,6 +5,7 @@ from PyQt6.QtTest import QTest
 
 from conftest import write_images
 from zoomer import widgets
+from zoomer.backend import get_supported_video_formats
 
 POINTS = [(50.0, 40.0), (150.0, 40.0), (100.0, 110.0)]
 
@@ -255,7 +256,9 @@ class TestVideoPreviewWidget:
 
 class TestVideoSettingsDialog:
     def test_returns_initial_values(self, qapp):
+        selected_format = get_supported_video_formats()[0][0]
         data = {
+            "format": selected_format,
             "size": (1280, 720),
             "FPS": 24,
             "duration": 5,
@@ -263,6 +266,7 @@ class TestVideoSettingsDialog:
         }
         settings = widgets.VideoSettingsDialog(data).settings()
         assert settings == {
+            "format": selected_format,
             "size": (1280, 720),
             "FPS": 24,
             "duration": 5.0,
@@ -276,11 +280,22 @@ class TestVideoSettingsDialog:
         assert settings["size"] == (1000, 500)
 
     def test_project_mode_has_name_field(self, qapp):
-        dialog = widgets.VideoSettingsDialog(
-            {}, project_mode=True, project_name="  My zoom "
-        )
+        dialog = widgets.NewProjectDialog({}, project_name="  My zoom ")
         assert dialog.project_name() == "My zoom"
-        assert widgets.VideoSettingsDialog({}).project_name() == ""
+        assert isinstance(dialog.video_settings, widgets.VideoSettingsWidget)
+
+    def test_video_settings_dialog_embeds_shared_widget(self, qapp):
+        dialog = widgets.VideoSettingsDialog({})
+        assert isinstance(dialog.video_settings, widgets.VideoSettingsWidget)
+
+    def test_format_options_match_runtime_probe(self, qapp):
+        expected = [entry[0] for entry in get_supported_video_formats()]
+        settings = widgets.VideoSettingsWidget({})
+        actual = [
+            settings.video_format_combo.itemData(index)
+            for index in range(settings.video_format_combo.count())
+        ]
+        assert actual == expected
 
 
 def test_load_oriented_image_caches_qt_image(qapp, tmp_path):

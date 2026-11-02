@@ -18,6 +18,10 @@ chains all the pairs into a single video.
   pair. It runs in the background and can be interrupted.
 - Live previews: input image, fusion preview (with fusion step and alpha
   range sliders) and a **video preview** with a scrubber and play controls.
+- AVI export from the File menu's **Export** action, with per-frame progress
+  shown in the Video preview tab and an interrupt button.
+- Runtime-probed output format choices (such as AVI, MP4, MOV, MKV, WebM and
+  other containers supported by the installed OpenCV codecs).
 - Undo/redo (`Ctrl+Z`, `Ctrl+Y`) of the last 10 project edits.
 - Projects are plain JSON files (`.zmr`) and are saved after every change.
 - Application preferences (`zoomer.cfg`): frame crosshair, auto open last
@@ -80,7 +84,8 @@ ruff format . && ruff check .
 
 ## Known limitations
 
-- The **Export** menu only chooses the output file name; rendering a video
-  to disk is available through `zoomer.backend.VideoGenerator` but is not yet
-  connected to the interface.
-- Videos are written as XVID AVI.
+- Available containers and codecs depend on the local OpenCV build. Zoomer
+  probes its supported candidate formats; OpenCV does not expose a complete
+  enumeration of every possible muxer extension.
+- Interrupt is checked between frames. The current frame finishes writing
+  before the partial AVI is closed.

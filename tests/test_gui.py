@@ -1,5 +1,6 @@
 import json
 import time
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -9,8 +10,12 @@ from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from conftest import triangle
 from zoomer import gui
-from zoomer.backend import ImageClass, load_config
-from zoomer.widgets import VideoSettingsDialog
+from zoomer.backend import (
+    ImageClass,
+    get_supported_video_formats,
+    load_config,
+)
+from zoomer.widgets import NewProjectDialog
 
 
 @pytest.fixture
@@ -25,12 +30,13 @@ def window(qapp, tmp_path, proj_data, no_dialogs):
 
 
 def stub_dialogs(monkeypatch, tmp_path, name="Fresh"):
-    monkeypatch.setattr(VideoSettingsDialog, "exec", lambda self: 1)
-    monkeypatch.setattr(VideoSettingsDialog, "project_name", lambda self: name)
+    monkeypatch.setattr(NewProjectDialog, "exec", lambda self: 1)
+    monkeypatch.setattr(NewProjectDialog, "project_name", lambda self: name)
     monkeypatch.setattr(
-        VideoSettingsDialog,
+        NewProjectDialog,
         "settings",
         lambda self: {
+            "format": get_supported_video_formats()[0][0],
             "size": [640, 360],
             "FPS": 30,
             "duration": 3,
@@ -368,6 +374,29 @@ class TestVideoExport:
         assert not preview.export_banner.isVisible()
         assert "interrupted" in preview.position_label.text().lower()
         assert window.file_menu_action.isEnabled()
+
+    def test_selected_project_format_sets_export_extension(
+        self, window, tmp_path, monkeypatch
+    ):
+        supported_format = get_supported_video_formats()[0][0]
+        window.proj_video_settings["format"] = supported_format
+        self.prepare_generator(window, monkeypatch, frame_count=0)
+        target = tmp_path / "chosen.other"
+        monkeypatch.setattr(
+            QFileDialog,
+            "getSaveFileName",
+            staticmethod(lambda *a, **k: (str(target), "")),
+        )
+        monkeypatch.setattr(
+            QMessageBox,
+            "information",
+            staticmethod(lambda *args, **kwargs: None),
+        )
+
+        window.select_export_filename()
+        QTest.qWait(300)
+
+        assert Path(window.export_filename).suffix == f".{supported_format}"
 
 
 class TestAlignment:

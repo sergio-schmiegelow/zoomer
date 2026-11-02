@@ -45,6 +45,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from .backend import get_supported_video_formats
+
 CROSS_SIZE = 20
 
 
@@ -669,10 +671,13 @@ class VideoPreviewWidget(QWidget):
         self.canvas.set_source_pixmap(pixmap, keep_view=True)
 
     def set_export_stopping(self):
-        self.export_banner_label.setText("Stopping export after current frame...")
+        self.export_banner_label.setText(
+            "Stopping export after current frame..."
+        )
         self.export_interrupt_button.setEnabled(False)
 
     def finish_export(self):
+        self._exporting = False
         self.export_banner.hide()
         self._update_controls()
 
@@ -711,7 +716,9 @@ class VideoPreviewWidget(QWidget):
             self.next_button,
             self.end_button,
         ):
-            button.setEnabled(has_video and not playing and not self._exporting)
+            button.setEnabled(
+                has_video and not playing and not self._exporting
+            )
         self.play_button.setEnabled(
             has_video
             and self._total_frames > 1
@@ -1388,7 +1395,7 @@ class ImageFusionEditionArea(QWidget):
         self.layout.addWidget(self.editor)
 
 
-class VideoSettingsDialog(QDialog):
+class VideoSettingsWidget(QWidget):
     VIDEO_SIZES = {
         "SD 480p (640 x 480)": (640, 480),
         "HD 720p (1280 x 720)": (1280, 720),
@@ -1398,19 +1405,20 @@ class VideoSettingsDialog(QDialog):
     }
     FRAME_RATES = (23.976, 24, 25, 29.97, 30, 50, 59.94, 60, 120)
 
-    def __init__(
-        self, video_data, parent=None, project_mode=False, project_name=""
-    ):
+    def __init__(self, video_data, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(
-            "New Project" if project_mode else "Video Settings"
-        )
-        self.setModal(True)
         layout = QFormLayout(self)
-        self.project_name_input = None
-        if project_mode:
-            self.project_name_input = QLineEdit(project_name)
-            layout.addRow("Project name", self.project_name_input)
+
+        self.video_format_combo = QComboBox()
+        supported_formats = get_supported_video_formats()
+        for extension, label, _fourcc in supported_formats:
+            self.video_format_combo.addItem(label, extension)
+        if not supported_formats:
+            self.video_format_combo.addItem(
+                "No supported video formats detected", None
+            )
+            self.video_format_combo.setEnabled(False)
+        layout.addRow("Output format", self.video_format_combo)
 
         self.video_size_combo = QComboBox()
         for label, dimensions in self.VIDEO_SIZES.items():
@@ -1451,14 +1459,6 @@ class VideoSettingsDialog(QDialog):
         self.interpolation_method_combo.addItem("Linear", "linear")
         layout.addRow("Interpolation", self.interpolation_method_combo)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok
-            | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addRow(buttons)
-
         self.video_size_combo.currentIndexChanged.connect(
             self._select_video_size
         )
@@ -1470,6 +1470,13 @@ class VideoSettingsDialog(QDialog):
         self._select_frame_rate(self.frame_rate_combo.currentIndex())
 
     def _initialize_values(self, video_data):
+        selected_format = video_data.get("format", "avi")
+        format_index = self.video_format_combo.findData(selected_format)
+        if format_index < 0 and self.video_format_combo.count():
+            format_index = 0
+        if format_index >= 0:
+            self.video_format_combo.setCurrentIndex(format_index)
+
         width, height = video_data.get("size", (1920, 1080))
         matching_size = next(
             (
@@ -1533,6 +1540,7 @@ class VideoSettingsDialog(QDialog):
         selected_size = self.video_size_combo.currentData()
         frame_rate = self.frame_rate_combo.currentData()
         return {
+            "format": self.video_format_combo.currentData(),
             "size": selected_size
             or (self.width_spin.value(), self.height_spin.value()),
             "FPS": frame_rate
@@ -1544,12 +1552,51 @@ class VideoSettingsDialog(QDialog):
             ),
         }
 
-    def project_name(self):
-        return (
-            self.project_name_input.text().strip()
-            if self.project_name_input
-            else ""
+
+class VideoSettingsDialog(QDialog):
+    def __init__(self, video_data, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Video Settings")
+        self.setModal(True)
+        layout = QVBoxLayout(self)
+        self.video_settings = VideoSettingsWidget(video_data, self)
+        layout.addWidget(self.video_settings)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
         )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def settings(self):
+        return self.video_settings.settings()
+
+
+class NewProjectDialog(QDialog):
+    def __init__(self, video_data=None, parent=None, project_name=""):
+        super().__init__(parent)
+        self.setWindowTitle("New Project")
+        self.setModal(True)
+        layout = QVBoxLayout(self)
+        self.project_name_input = QLineEdit(project_name)
+        self.project_name_input.setPlaceholderText("Project name")
+        layout.addWidget(self.project_name_input)
+        self.video_settings = VideoSettingsWidget(video_data or {}, self)
+        layout.addWidget(self.video_settings)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def project_name(self):
+        return self.project_name_input.text().strip()
+
+    def settings(self):
+        return self.video_settings.settings()
 
 
 class ImageMarkersEditor(QWidget):

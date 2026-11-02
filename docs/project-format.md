@@ -13,7 +13,8 @@ writes absolute image paths.
     "size": [1920, 1080],
     "FPS": 30,
     "duration": 10,
-    "interpolation_method": "log"
+    "interpolation_method": "log",
+    "format": "avi"
   },
   "images_data": [
     {
@@ -34,6 +35,7 @@ writes absolute image paths.
 | `video_data.FPS` | Frames per second |
 | `video_data.duration` | Length in seconds; frames = `FPS * duration` |
 | `video_data.interpolation_method` | `"log"` (default) or `"linear"` marker interpolation |
+| `video_data.format` | Output container extension, selected from formats probed by the active OpenCV installation (default `"avi"`) |
 | `images_data[].image` | Image path |
 | `images_data[].frame` | `[[x0, y0], [x1, y1]]` crop in image pixels, with the video aspect ratio |
 | `images_data[].next_points` | Three `[x, y]` markers matched with the next image; `null` on the last image |

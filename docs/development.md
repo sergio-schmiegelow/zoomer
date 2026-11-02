@@ -21,8 +21,8 @@ in a temporary directory), so no sample data is needed.
 | File | Covers |
 | --- | --- |
 | `tests/test_backend.py` | `ImageClass`, project I/O, interpolation, zoom chain, video generation, SIFT alignment |
-| `tests/test_widgets.py` | Marker editor interaction, sliders, image list, video preview controls, settings dialog |
-| `tests/test_gui.py` | Projects, preferences, start-up, undo/redo, video preview, background alignment |
+| `tests/test_widgets.py` | Marker editor interaction, sliders, image list, video preview controls, settings dialog, scrubber recovery after export |
+| `tests/test_gui.py` | Projects, preferences, start-up, undo/redo, video preview, background alignment, export success and interruption |
 
 ## Style
 
@@ -41,6 +41,9 @@ isort and pep8-naming rules). Conventions:
   `N802` is ignored for `widgets.py`.
 - `proj_` prefix for data that mirrors the project file, `cfg_` prefix for
   application preferences.
+- Keep video controls in `VideoSettingsWidget`; both `VideoSettingsDialog`
+  and `NewProjectDialog` embed that shared widget. Add container support via
+  runtime OpenCV writer probes rather than assuming a codec is installed.
 - Project and config JSON keys are part of the file format and keep their
   names.
 

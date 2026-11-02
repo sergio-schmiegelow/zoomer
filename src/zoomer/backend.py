@@ -1,4 +1,6 @@
 import json
+import tempfile
+from functools import lru_cache
 from pathlib import Path
 
 import cv2 as cv
@@ -11,6 +13,76 @@ CROSS_COLORS = [[255, 0, 0], [0, 255, 0], [0, 0, 255]]  # Red, Green, Blue
 FRAME_COLOR = [255, 0, 0]  # Blue
 FRAME_THICKNESS = 2
 BLEND_RANGE_DETECTION_RESOLUTION = 0.01
+
+VIDEO_FORMAT_CANDIDATES = (
+    ("avi", "AVI", ("XVID", "MJPG", "DIVX", "HFYU")),
+    ("mp4", "MP4", ("mp4v",)),
+    ("m4v", "M4V", ("mp4v",)),
+    ("mov", "QuickTime MOV", ("mp4v",)),
+    ("mkv", "Matroska MKV", ("XVID", "mp4v", "MJPG")),
+    ("webm", "WebM", ("VP80", "VP90")),
+    ("wmv", "Windows Media WMV", ("WMV2", "WMV1")),
+    ("flv", "Flash Video FLV", ("FLV1",)),
+    ("ts", "MPEG Transport Stream", ("MP2V",)),
+    ("mts", "AVCHD MTS", ("MP2V",)),
+    ("3gp", "3GPP", ("mp4v",)),
+    ("mjpeg", "Motion JPEG", ("MJPG",)),
+    ("mpg", "MPEG Program Stream", ("PIM1",)),
+    ("mpeg", "MPEG Video", ("PIM1",)),
+    ("vob", "DVD Video VOB", ("MP2V",)),
+    ("asf", "Advanced Systems Format", ("WMV2",)),
+    ("nut", "NUT Container", ("FFV1",)),
+    ("dv", "DV Video", ("DVSD",)),
+    ("y4m", "YUV4MPEG2", ("I420",)),
+)
+
+
+@lru_cache(maxsize=1)
+def get_supported_video_formats() -> tuple[tuple[str, str, str], ...]:
+    """Return common container formats this OpenCV build can encode."""
+    logging = getattr(getattr(cv, "utils", None), "logging", None)
+    previous_log_level = logging.getLogLevel() if logging else None
+    if logging:
+        logging.setLogLevel(logging.LOG_LEVEL_SILENT)
+    supported_formats = []
+    try:
+        for extension, label, fourcc_options in VIDEO_FORMAT_CANDIDATES:
+            fourcc = _probe_video_format(extension, fourcc_options)
+            if fourcc:
+                supported_formats.append(
+                    (extension, f"{label} (*.{extension})", fourcc)
+                )
+    finally:
+        if logging:
+            logging.setLogLevel(previous_log_level)
+    return tuple(supported_formats)
+
+
+def _probe_video_format(extension: str, fourcc_options: tuple[str, ...]):
+    for fourcc in fourcc_options:
+        writer = None
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                filename = Path(directory) / f"probe.{extension}"
+                writer = cv.VideoWriter(
+                    str(filename),
+                    cv.VideoWriter_fourcc(*fourcc),
+                    25,
+                    (32, 32),
+                )
+                if not writer.isOpened():
+                    continue
+                writer.write(np.zeros((32, 32, 3), dtype=np.uint8))
+                writer.release()
+                writer = None
+                if filename.is_file() and filename.stat().st_size > 0:
+                    return fourcc
+        except (OSError, cv.error):
+            pass
+        finally:
+            if writer is not None:
+                writer.release()
+    return None
 
 
 # -------------------------------------------------------------------------
@@ -729,11 +801,27 @@ class VideoGenerator:
     # ---------------------------------------------------------------------
     def set_video_filename(self, filename: str):
         self.filename = filename
+
     # ---------------------------------------------------------------------
     def open_video_writer(self):
+        selected_format = self.proj_data["video_data"].get("format", "avi")
+        format_info = next(
+            (
+                supported_format
+                for supported_format in get_supported_video_formats()
+                if supported_format[0] == selected_format
+            ),
+            None,
+        )
+        if format_info is None:
+            raise ValueError(
+                f"Video format is not supported by this OpenCV build: "
+                f"{selected_format}"
+            )
+        _extension, _label, fourcc = format_info
         self._video_writer = cv.VideoWriter(
             self.filename,
-            cv.VideoWriter_fourcc(*"XVID"),
+            cv.VideoWriter_fourcc(*fourcc),
             int(self.proj_data["video_data"]["FPS"]),
             tuple(
                 np.array(self.proj_data["video_data"]["size"], dtype=np.int32)
