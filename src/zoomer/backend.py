@@ -5,6 +5,8 @@ from pathlib import Path
 
 import cv2 as cv
 import numpy as np
+import time
+from itertools import combinations
 
 NUM_FRAMES = 100
 CROSS_SIZE = 10
@@ -643,6 +645,45 @@ def auto_align_images(
 
 
 # -------------------------------------------------------------------------
+def select_alingment_points(matches, kp0, kp1, num_points, n_best):
+    start = time.time()
+    matches = sorted(matches, key=lambda x: x[0].distance)
+    selected_matches = matches[:n_best]
+    if len(selected_matches) < num_points:
+        return None, "Not enough matches to select alignment points"
+    indexes = list(range(len(selected_matches)))
+    indexes_combinations = list(combinations(indexes, num_points))
+    #print(f"DEBUG - Indexes combinations: {indexes_combinations}")
+    #Create one transformation for each combination of matches
+    transformations = []
+    for combination in indexes_combinations:
+        #print(f"DEBUG - Processing combination: {combination}")
+        img0_first_point  = kp0[matches[combination[0]][0].queryIdx].pt
+        img1_first_point  = kp1[matches[combination[0]][0].trainIdx].pt
+        img0_second_point = kp0[matches[combination[1]][0].queryIdx].pt
+        img1_second_point = kp1[matches[combination[1]][0].trainIdx].pt
+        img0_third_point  = kp0[matches[combination[2]][0].queryIdx].pt
+        img1_third_point  = kp1[matches[combination[2]][0].trainIdx].pt
+        affineTransform = cv.getAffineTransform(
+            np.array([img0_first_point, img0_second_point, img0_third_point], dtype=np.float32),
+            np.array([img1_first_point, img1_second_point, img1_third_point], dtype=np.float32)
+        )
+        transformations.append(affineTransform.flatten())
+    #Iterate over all combinations, removing the one that is furthest from the average transformation until only one combination remains
+    while len(indexes_combinations) > 1:
+        avg_transformation = np.mean([transformations[i] for i in range(len(indexes_combinations))], axis=0)
+        distances = [np.linalg.norm(transformations[i] - avg_transformation) for i in range(len(indexes_combinations))]
+        #print(f'DEBUG - Average distance: {np.mean(distances)}')
+        furthest_index = np.argmax(distances)
+        del indexes_combinations[furthest_index]
+        del transformations[furthest_index]
+    best_combination = indexes_combinations[0]
+    #print(f"DEBUG - Best combination: {best_combination}")
+    print(f"DEBUG - Time taken for select_alingment_points: {time.time() - start}")
+    return [kp0[matches[i][0].queryIdx].pt for i in best_combination], [kp1[matches[i][0].trainIdx].pt for i in best_combination]
+
+
+# -------------------------------------------------------------------------
 def sift_alignment(img0, img1) -> np.ndarray:
     # Perform SIFT feature detection and matching between img0 and img1.
     # Return the matched points for alignment or none if not enough matches
@@ -658,26 +699,7 @@ def sift_alignment(img0, img1) -> np.ndarray:
         print("DEBUG - Not enough matches found.")
         return None, None
     print(f"DEBUG - Total matches found: {len(matches)}")
-    # Sort matches based on distance, best matches first
-    matches = sorted(matches, key=lambda x: x[0].distance)
-
-    img0_first_point = kp0[matches[0][0].queryIdx].pt
-    img1_first_point = kp1[matches[0][0].trainIdx].pt
-    img0_second_point = kp0[matches[1][0].queryIdx].pt
-    img1_second_point = kp1[matches[1][0].trainIdx].pt
-    img0_third_point = kp0[matches[2][0].queryIdx].pt
-    img1_third_point = kp1[matches[2][0].trainIdx].pt
-
-    img0_next_points = np.array(
-        [img0_first_point, img0_second_point, img0_third_point],
-        dtype=np.float32,
-    )
-    img1_prev_points = np.array(
-        [img1_first_point, img1_second_point, img1_third_point],
-        dtype=np.float32,
-    )
-
-    return img0_next_points, img1_prev_points
+    return select_alingment_points(matches, kp0, kp1, 3, 15)
 
 
 # -------------------------------------------------------------------------
