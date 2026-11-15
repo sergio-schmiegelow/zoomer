@@ -17,7 +17,7 @@ The window title shows the current project name.
 | Menu | Item | Description |
 | --- | --- | --- |
 | File | Open project (`Ctrl+O`) | Load a `.zmr` file |
-| File | Save project | Write the project to its file |
+| File | Save project (`Ctrl+S`) | Write the current project to its named `.zmr` file |
 | File | Save project as | Save under a new name (`.zmr` is enforced) |
 | File | New project | Ask for a name and the video settings, then a file |
 | Edit | Undo / Redo (`Ctrl+Z` / `Ctrl+Y`) | Last 10 project edits |
@@ -54,7 +54,26 @@ The window title shows the current project name.
    frame rate. A calculation problem, such as markers that make the zoom
    shrink between images, is reported on the preview canvas.
 
-Every change is saved to the project file immediately.
+Every change is written to `autosave.zmr` immediately for crash recovery.
+Use **File > Save project** or `Ctrl+S` to write the changes to the named
+project file; **Save project as** chooses a new named project file.
+The window title displays `*` while changes are unsaved to the named project.
+Closing a modified project asks whether to **Save**, **Discard**, or **Cancel**;
+Cancel keeps the editor open, and Discard removes the recovery snapshot.
+The window title shows `*` while changes have not been saved to the named
+project. Closing while modified prompts to **Save**, **Discard**, or **Cancel**.
+Discard removes the recovery snapshot; Cancel leaves the application open.
+
+## Crash recovery
+
+At startup, if `autosave.zmr` exists, Zoomer asks whether to recover it. The
+recovered data is treated as unsaved: use **Save project as** (or `Ctrl+S`,
+which opens Save As when no named project is active) to write a named project.
+Choosing not to recover removes that stale recovery file, then startup
+continues with the configured last project or New Project flow.
+
+`autosave.zmr` is stored next to the selected `zoomer.cfg`. It is separate
+from the named project and cannot be selected as a named project file.
 
 ## Exporting a video
 

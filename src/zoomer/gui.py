@@ -15,8 +15,8 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QMainWindow,
     QMessageBox,
-    QSplitter,
     QSpinBox,
+    QSplitter,
     QWidgetAction,
 )
 
@@ -38,6 +38,7 @@ from .widgets import (
 
 HISTORY_LIMIT = 10
 CFG_FILENAME = "zoomer.cfg"
+AUTOSAVE_FILENAME = "autosave.zmr"
 
 
 class _AlignmentJob(QThread):
@@ -103,7 +104,12 @@ CFG_DEFAULTS = {
 
 class MainApp(QMainWindow):
     def __init__(
-        self, proj_data=None, autosave_path=None, cfg_data=None, cfg_path=None
+        self,
+        proj_data=None,
+        autosave_path=None,
+        cfg_data=None,
+        cfg_path=None,
+        recovery_path=None,
     ):
         super().__init__()
         self.proj_data = (
@@ -119,10 +125,14 @@ class MainApp(QMainWindow):
             else None
         )
         self.cfg_path = Path(cfg_path or Path.cwd() / CFG_FILENAME)
+        self.recovery_path = Path(
+            recovery_path or self.cfg_path.parent / AUTOSAVE_FILENAME
+        )
         self.cfg_data = {**CFG_DEFAULTS, **(cfg_data or {})}
         self.cfg_data["marker_thickness"] = max(
             1, min(10, int(self.cfg_data.get("marker_thickness", 2)))
         )
+        self._project_modified = False
         self.export_filename = ""
         self.proj_image_entries = []
         self._alignment_job = None
@@ -153,6 +163,7 @@ class MainApp(QMainWindow):
         open_action.setShortcut(QKeySequence.StandardKey.Open)
         open_action.triggered.connect(self.open_project)
         save_action = file_menu.addAction("Save project")
+        save_action.setShortcut(QKeySequence.StandardKey.Save)
         save_action.triggered.connect(self.save_project)
         save_as_action = file_menu.addAction("Save project as")
         save_as_action.triggered.connect(self.save_as)
@@ -235,11 +246,20 @@ class MainApp(QMainWindow):
         project_name = self.proj_data.get("project_name", "")
         if not project_name and self.proj_filename:
             project_name = Path(self.proj_filename).stem
+        if self._project_modified:
+            project_name = f"{project_name or 'No project'} *"
         self.setWindowTitle(
             f"Zoomer - {project_name}"
             if project_name
             else "Zoomer - No project"
         )
+
+    def _set_project_modified(self, modified):
+        modified = bool(modified)
+        if modified == self._project_modified:
+            return
+        self._project_modified = modified
+        self._update_window_title()
 
     def open_project(self, _checked=False):
         filename, _selected_filter = QFileDialog.getOpenFileName(
@@ -249,6 +269,14 @@ class MainApp(QMainWindow):
             "Zoomer projects (*.zmr);;All files (*)",
         )
         if not filename:
+            return
+        if self._is_recovery_path(filename):
+            QMessageBox.warning(
+                self,
+                "Open project",
+                "autosave.zmr is a recovery file, not a named project. "
+                "Choose Recover autosave at startup to restore it.",
+            )
             return
         try:
             proj_loaded = load_config(filename)
@@ -267,15 +295,21 @@ class MainApp(QMainWindow):
         proj_loaded.setdefault("video_data", {})
         self._apply_restored_config(proj_loaded)
         self._remember_project(filename)
+        self._set_project_modified(False)
         if self._normalize_boundary_points():
-            self.save_autosave()
+            self.save_autosave(mark_modified=False)
 
     def save_project(self, _checked=False):
         if not self.proj_filename:
-            self.new_project()
-            return
+            return self.save_as()
         save_config(self.proj_filename, self.proj_data)
+        self.save_autosave(mark_modified=False)
         self._remember_project(self.proj_filename)
+        self._set_project_modified(False)
+        return True
+
+    def _is_recovery_path(self, filename):
+        return Path(filename).resolve() == self.recovery_path.resolve()
 
     def save_as(self, _checked=False):
         filename, _selected_filter = QFileDialog.getSaveFileName(
@@ -284,11 +318,23 @@ class MainApp(QMainWindow):
             self.proj_filename or str(Path.home()),
             "Zoomer projects (*.zmr)",
         )
-        if filename:
-            self.proj_filename = str(Path(filename).with_suffix(".zmr"))
-            self.proj_data["project_name"] = Path(self.proj_filename).stem
-            save_config(self.proj_filename, self.proj_data)
-            self._remember_project(self.proj_filename)
+        if not filename:
+            return False
+        named_path = Path(filename).with_suffix(".zmr")
+        if self._is_recovery_path(named_path):
+            QMessageBox.warning(
+                self,
+                "Save project as",
+                "The autosave file is reserved for crash recovery.",
+            )
+            return False
+        self.proj_filename = str(named_path)
+        self.proj_data["project_name"] = Path(self.proj_filename).stem
+        save_config(self.proj_filename, self.proj_data)
+        self._remember_project(self.proj_filename)
+        self.save_autosave(mark_modified=False)
+        self._set_project_modified(False)
+        return True
 
     def new_project(self, _checked=False):
         dialog = NewProjectDialog({}, self)
@@ -315,10 +361,18 @@ class MainApp(QMainWindow):
         )
         if not filename:
             return
+        named_path = Path(filename).with_suffix(".zmr")
+        if self._is_recovery_path(named_path):
+            QMessageBox.warning(
+                self,
+                "New project",
+                "The autosave file is reserved for crash recovery.",
+            )
+            return
         self._undo_stack.clear()
         self._redo_stack.clear()
         self._edit_burst_timer.stop()
-        self.proj_filename = str(Path(filename).with_suffix(".zmr"))
+        self.proj_filename = str(named_path)
         self.proj_directory = Path(self.proj_filename).resolve().parent
         self.proj_data.clear()
         self.proj_data.update(
@@ -333,6 +387,8 @@ class MainApp(QMainWindow):
         self._apply_restored_config(dict(self.proj_data))
         save_config(self.proj_filename, self.proj_data)
         self._remember_project(self.proj_filename)
+        self.save_autosave(mark_modified=False)
+        self._set_project_modified(False)
 
     def open_video_settings(self, _checked=False):
         dialog = VideoSettingsDialog(self.proj_video_settings, self)
@@ -476,6 +532,26 @@ class MainApp(QMainWindow):
         if self._video_export_job is not None:
             self._video_export_job.interrupt()
             self._video_export_job.wait()
+        if self._project_modified:
+            choice = QMessageBox.question(
+                self,
+                "Unsaved project changes",
+                "Save changes to the named project before closing?",
+                QMessageBox.StandardButton.Save
+                | QMessageBox.StandardButton.Discard
+                | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Save,
+            )
+            if choice == QMessageBox.StandardButton.Cancel:
+                event.ignore()
+                return
+            if choice == QMessageBox.StandardButton.Save:
+                if not self.save_project():
+                    event.ignore()
+                    return
+            elif choice == QMessageBox.StandardButton.Discard:
+                self.recovery_path.unlink(missing_ok=True)
+                self._set_project_modified(False)
         super().closeEvent(event)
 
     def set_image_workspace(self, proj_image_entries, proj_directory):
@@ -526,6 +602,7 @@ class MainApp(QMainWindow):
         organizer.set_image_files(paths)
         self._show_pair(max(0, organizer.image_list.currentRow()))
         self._schedule_video_preview()
+        self._set_project_modified(False)
 
     def _schedule_video_preview(self):
         self._video_preview_timer.start()
@@ -676,7 +753,7 @@ class MainApp(QMainWindow):
         self.proj_image_entries = updated_entries
         self.proj_data["images_data"] = updated_entries
         self._normalize_boundary_points()
-        self.save_autosave()
+        self.save_autosave(mark_modified=not unchanged)
         organizer = self.image_files_and_preview_area.image_files_organizer
         current_row = organizer.image_list.currentRow()
         self._show_pair(max(0, current_row))
@@ -699,6 +776,7 @@ class MainApp(QMainWindow):
         return snapshot
 
     def _record_history(self, coalesce=False):
+        self._set_project_modified(True)
         if coalesce:
             burst_active = self._edit_burst_timer.isActive()
             self._edit_burst_timer.start()
@@ -729,6 +807,7 @@ class MainApp(QMainWindow):
         source.pop()
         self._edit_burst_timer.stop()
         self._apply_restored_config(proj_restored)
+        self._set_project_modified(True)
 
     @staticmethod
     def _restore_snapshot(snapshot, current_images):
@@ -761,8 +840,9 @@ class MainApp(QMainWindow):
             min(max(row, 0), organizer.image_list.count() - 1)
         )
         organizer.blockSignals(False)
-        self.save_autosave()
+        self.save_autosave(mark_modified=False)
         self._show_pair(max(0, organizer.image_list.currentRow()))
+        self._set_project_modified(False)
 
     def _normalize_boundary_points(self):
         if not self.proj_image_entries:
@@ -842,10 +922,16 @@ class MainApp(QMainWindow):
         center_y = random.uniform(minimum_y, maximum_y)
         return [[center_x + x, center_y + y] for x, y in vertices]
 
-    def save_autosave(self):
+    def save_autosave(self, mark_modified=True):
         self._schedule_video_preview()
-        if self.proj_filename:
-            save_config(self.proj_filename, self.proj_data)
+        self.recovery_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path = self.recovery_path.with_name(
+            self.recovery_path.name + ".tmp"
+        )
+        save_config(str(temporary_path), self.proj_data)
+        temporary_path.replace(self.recovery_path)
+        if mark_modified:
+            self._set_project_modified(True)
 
     def _paths_for_entries(self):
         return [
@@ -965,6 +1051,40 @@ def main(argv=None) -> int:
         cfg_data = dict(CFG_DEFAULTS)
     window = MainApp(cfg_data=cfg_data, cfg_path=cfg_path)
     window.set_image_workspace([], cfg_path.parent)
+    recovery_path = window.recovery_path
+    if recovery_path.is_file():
+        recover = QMessageBox.question(
+            window,
+            "Recover autosave",
+            "An autosaved project was found. Recover it?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if recover == QMessageBox.StandardButton.Yes:
+            try:
+                recovered_data = load_config(str(recovery_path))
+                recovered_data.setdefault("project_name", recovery_path.stem)
+                window.proj_filename = None
+                window.proj_directory = recovery_path.parent
+                window._apply_restored_config(recovered_data)
+                window._set_project_modified(True)
+                window._update_window_title()
+                window.resize(1000, 700)
+                window.show()
+                return app.exec()
+            except (
+                OSError,
+                ValueError,
+                KeyError,
+                json.JSONDecodeError,
+            ) as error:
+                QMessageBox.warning(
+                    window,
+                    "Recover autosave",
+                    f"Unable to recover {recovery_path}:\n{error}",
+                )
+        else:
+            recovery_path.unlink(missing_ok=True)
     cfg_last_project = cfg_data.get("last_project", "")
     if (
         cfg_data.get("auto_open_last_project")

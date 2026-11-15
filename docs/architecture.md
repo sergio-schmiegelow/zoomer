@@ -57,8 +57,22 @@ the change.
 - `cfg_data`: application preferences, persisted to `zoomer.cfg`. Related
   names use the `cfg_` prefix.
 
-Every modification goes through `save_autosave()`, which writes the project
-file and schedules a 200 ms debounced `_refresh_video_preview()`.
+Every project modification goes through `save_autosave()`, which atomically
+writes `autosave.zmr` beside the application config and schedules a 200 ms
+debounced `_refresh_video_preview()`. The named `proj_filename` is written
+only by Save, Save As, or Ctrl+S.
+
+`_project_modified` tracks edits since the last named save and adds `*` to
+the window title. `closeEvent()` offers Save, Discard, or Cancel when dirty.
+Discard removes the recovery snapshot; Cancel rejects the close event. A
+recovered autosave starts dirty because it has no named project path yet.
+Initial organizer population is not considered an edit; real file-list
+changes, settings changes, marker/frame edits, alignment, undo and redo mark
+the project dirty.
+
+At startup, an existing recovery file is offered to the user before the last
+named project is auto-opened. A recovered project has no active named path;
+Save routes to Save As until the user chooses one.
 
 ### History
 

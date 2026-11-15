@@ -65,3 +65,10 @@ projects from the directory they were written for.
 | `last_project` | `""` | Absolute path of the most recently opened or saved project |
 
 Missing keys fall back to the defaults; an unreadable file is ignored.
+
+## Recovery (`autosave.zmr`)
+
+`autosave.zmr` uses the same JSON project structure as a named `.zmr` file.
+It is atomically replaced after each project change and is offered for
+recovery on the next launch. Explicit Save and Save As write the named project
+file separately; Save does not rename or remove the recovery file.

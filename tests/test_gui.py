@@ -14,15 +14,16 @@ from zoomer.backend import (
     ImageClass,
     get_supported_video_formats,
     load_config,
+    save_config,
 )
 from zoomer.widgets import NewProjectDialog
 
 
 @pytest.fixture
 def window(qapp, tmp_path, proj_data, no_dialogs):
-    main = gui.MainApp(
-        proj_data, tmp_path / "demo.zmr", {}, tmp_path / "zoomer.cfg"
-    )
+    project_path = tmp_path / "demo.zmr"
+    save_config(str(project_path), proj_data)
+    main = gui.MainApp(proj_data, project_path, {}, tmp_path / "zoomer.cfg")
     main.set_image_workspace(proj_data["images_data"], tmp_path)
     main.show()
     yield main
@@ -51,13 +52,25 @@ def stub_dialogs(monkeypatch, tmp_path, name="Fresh"):
 
 
 class TestProjects:
+    def test_project_is_clean_until_edited_then_title_marks_dirty(
+        self, window
+    ):
+        assert not window._project_modified
+        window._image_edited(
+            0, "frame", {"upper_left": (2, 3), "width": 50, "height": 25}
+        )
+        assert window._project_modified
+        assert window.windowTitle().endswith(" *")
+
     def test_new_project_creates_zmr_and_updates_title(
         self, window, tmp_path, monkeypatch
     ):
         stub_dialogs(monkeypatch, tmp_path)
         window.new_project()
         saved = json.loads((tmp_path / "Fresh.zmr").read_text())
+        recovered = json.loads((tmp_path / gui.AUTOSAVE_FILENAME).read_text())
         assert saved["project_name"] == "Fresh"
+        assert recovered["project_name"] == "Fresh"
         assert saved["video_data"]["size"] == [640, 360]
         assert saved["images_data"] == []
         assert window.windowTitle() == "Zoomer - Fresh"
@@ -96,12 +109,77 @@ class TestProjects:
         assert (tmp_path / "copy.zmr").exists()
         assert window.windowTitle() == "Zoomer - copy"
 
-    def test_edits_are_autosaved_to_the_project_file(self, window, tmp_path):
+    def test_save_as_cannot_overwrite_recovery_file(
+        self, window, tmp_path, monkeypatch, no_dialogs
+    ):
+        recovery_path = tmp_path / gui.AUTOSAVE_FILENAME
+        recovery_path.write_text("recovery sentinel")
+        monkeypatch.setattr(
+            QFileDialog,
+            "getSaveFileName",
+            staticmethod(lambda *a, **k: (str(recovery_path), "")),
+        )
+        window.save_as()
+        assert recovery_path.read_text() == "recovery sentinel"
+        assert window.proj_filename == str(tmp_path / "demo.zmr")
+        assert no_dialogs
+
+    def test_edits_are_autosaved_without_overwriting_named_project(
+        self, window, tmp_path
+    ):
+        named_path = tmp_path / "demo.zmr"
+        original_named_data = load_config(str(named_path))
         window._image_edited(
             0, "frame", {"upper_left": (1, 2), "width": 100, "height": 50}
         )
-        saved = load_config(str(tmp_path / "demo.zmr"))
-        assert saved["images_data"][0]["frame"] == [[1, 2], [101, 52]]
+        recovery_path = tmp_path / gui.AUTOSAVE_FILENAME
+        recovered = load_config(str(recovery_path))
+        named_after_edit = load_config(str(named_path))
+        assert recovered["images_data"][0]["frame"] == [[1, 2], [101, 52]]
+        assert (
+            named_after_edit["images_data"][0]["frame"]
+            == original_named_data["images_data"][0]["frame"]
+        )
+
+    def test_save_project_writes_named_file_and_keeps_recovery(
+        self, window, tmp_path
+    ):
+        window._image_edited(
+            0, "frame", {"upper_left": (3, 4), "width": 80, "height": 40}
+        )
+        recovery_path = tmp_path / gui.AUTOSAVE_FILENAME
+        window.save_project()
+        named = load_config(str(tmp_path / "demo.zmr"))
+        recovered = load_config(str(recovery_path))
+        expected_frame = [[3, 4], [83, 44]]
+        assert named["images_data"][0]["frame"] == expected_frame
+        assert recovered["images_data"][0]["frame"] == expected_frame
+
+    def test_save_action_has_ctrl_s_shortcut(self, window):
+        actions = window.file_menu_action.menu().actions()
+        save_action = next(
+            action for action in actions if action.text() == "Save project"
+        )
+        assert (
+            save_action.shortcut().matches(gui.QKeySequence.StandardKey.Save)
+            == gui.QKeySequence.SequenceMatch.ExactMatch
+        )
+
+    def test_save_without_named_project_prompts_for_a_name(
+        self, window, tmp_path, monkeypatch
+    ):
+        window.proj_filename = None
+        monkeypatch.setattr(
+            QFileDialog,
+            "getSaveFileName",
+            staticmethod(
+                lambda *args, **kwargs: (str(tmp_path / "recovered"), "")
+            ),
+        )
+        window.save_project()
+        assert window.proj_filename == str(tmp_path / "recovered.zmr")
+        assert (tmp_path / "recovered.zmr").is_file()
+        assert (tmp_path / gui.AUTOSAVE_FILENAME).is_file()
 
 
 class TestCfgOptions:
@@ -146,6 +224,73 @@ class TestCfgOptions:
 
 
 class TestMain:
+    def test_declining_recovery_discards_autosave(
+        self, qapp, tmp_path, proj_file, monkeypatch
+    ):
+        cfg_path = tmp_path / "zoomer.cfg"
+        cfg_path.write_text("{}")
+        recovery_path = tmp_path / gui.AUTOSAVE_FILENAME
+        recovery_path.write_text(proj_file.read_text())
+        observed = {}
+
+        class Capture(gui.MainApp):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                observed["window"] = self
+
+        monkeypatch.setattr(gui, "MainApp", Capture)
+        monkeypatch.setattr(
+            QMessageBox,
+            "question",
+            staticmethod(
+                lambda *args, **kwargs: QMessageBox.StandardButton.No
+            ),
+        )
+        monkeypatch.setattr(
+            QApplication,
+            "exec",
+            lambda _app: 0,
+        )
+        monkeypatch.setattr(gui.QTimer, "singleShot", lambda *_args: None)
+
+        assert gui.main(["--config", str(cfg_path)]) == 0
+        assert not recovery_path.exists()
+        assert observed["window"].proj_filename is None
+
+    def test_startup_offers_recovery_and_does_not_assign_named_project(
+        self, qapp, tmp_path, proj_file, monkeypatch
+    ):
+        cfg_path = tmp_path / "zoomer.cfg"
+        cfg_path.write_text("{}")
+        recovery_path = tmp_path / gui.AUTOSAVE_FILENAME
+        recovery_path.write_text(proj_file.read_text())
+        observed = {}
+
+        class Capture(gui.MainApp):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                observed["window"] = self
+
+        monkeypatch.setattr(gui, "MainApp", Capture)
+        monkeypatch.setattr(
+            QMessageBox,
+            "question",
+            staticmethod(
+                lambda *args, **kwargs: QMessageBox.StandardButton.Yes
+            ),
+        )
+        monkeypatch.setattr(
+            QApplication,
+            "exec",
+            lambda _app: 0,
+        )
+
+        assert gui.main(["--config", str(cfg_path)]) == 0
+        recovered_window = observed["window"]
+        assert recovered_window.proj_filename is None
+        assert recovered_window.proj_data["project_name"] == "Demo"
+        assert len(recovered_window.proj_image_entries) == 3
+
     def test_auto_opens_the_last_project(
         self, qapp, tmp_path, proj_file, monkeypatch, no_dialogs
     ):
@@ -181,6 +326,62 @@ class TestMain:
         assert observed["title"] == "Zoomer - Demo"
         assert observed["entries"] == 3
         assert observed["crosshair"] is False
+
+
+class TestClosePrompt:
+    def dirty_window(self, window):
+        window._image_edited(
+            0, "frame", {"upper_left": (4, 5), "width": 60, "height": 30}
+        )
+        assert window._project_modified
+        return window
+
+    def test_close_save_writes_named_project(
+        self, window, tmp_path, monkeypatch
+    ):
+        window = self.dirty_window(window)
+        monkeypatch.setattr(
+            QMessageBox,
+            "question",
+            staticmethod(
+                lambda *args, **kwargs: QMessageBox.StandardButton.Save
+            ),
+        )
+        assert window.close()
+        saved = load_config(str(tmp_path / "demo.zmr"))
+        assert saved["images_data"][0]["frame"] == [[4, 5], [64, 35]]
+        assert not window._project_modified
+
+    def test_close_discard_removes_recovery_and_closes(
+        self, window, tmp_path, monkeypatch
+    ):
+        window = self.dirty_window(window)
+        recovery_path = tmp_path / gui.AUTOSAVE_FILENAME
+        assert recovery_path.exists()
+        monkeypatch.setattr(
+            QMessageBox,
+            "question",
+            staticmethod(
+                lambda *args, **kwargs: QMessageBox.StandardButton.Discard
+            ),
+        )
+        assert window.close()
+        assert not recovery_path.exists()
+        assert not window._project_modified
+
+    def test_close_cancel_keeps_window_open_and_dirty(
+        self, window, monkeypatch
+    ):
+        window = self.dirty_window(window)
+        monkeypatch.setattr(
+            QMessageBox,
+            "question",
+            staticmethod(
+                lambda *args, **kwargs: QMessageBox.StandardButton.Cancel
+            ),
+        )
+        assert not window.close()
+        assert window._project_modified
 
 
 class TestHistory:

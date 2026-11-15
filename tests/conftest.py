@@ -29,6 +29,11 @@ def no_dialogs(monkeypatch):
         "warning",
         staticmethod(lambda *args, **kwargs: warnings.append(args[1:])),
     )
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        staticmethod(lambda *args, **kwargs: QMessageBox.StandardButton.Save),
+    )
     return warnings
 
 

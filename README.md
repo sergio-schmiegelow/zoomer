@@ -23,7 +23,11 @@ chains all the pairs into a single video.
 - Runtime-probed output format choices (such as AVI, MP4, MOV, MKV, WebM and
   other containers supported by the installed OpenCV codecs).
 - Undo/redo (`Ctrl+Z`, `Ctrl+Y`) of the last 10 project edits.
-- Projects are plain JSON files (`.zmr`) and are saved after every change.
+- Changes are continuously written to `autosave.zmr` for crash recovery.
+- Named `.zmr` project files are saved explicitly with **Save project**,
+  **Save project as**, or `Ctrl+S`.
+- At startup, Zoomer offers to recover `autosave.zmr`; declining removes the
+  stale recovery snapshot and continues normal startup.
 - Application preferences (`zoomer.cfg`): frame crosshair, auto open last
   project, and alignment-marker thickness (1–10 pixels, default 2).
 - **Options > Marker thickness** adjusts both colored marker strokes and
