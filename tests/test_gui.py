@@ -224,6 +224,84 @@ class TestCfgOptions:
 
 
 class TestMain:
+    def test_skips_recovery_prompt_when_autosave_matches_named_project(
+        self, qapp, tmp_path, proj_file, monkeypatch
+    ):
+        cfg_path = tmp_path / "zoomer.cfg"
+        recovery_path = tmp_path / gui.AUTOSAVE_FILENAME
+        recovery_path.write_text(proj_file.read_text())
+        cfg_path.write_text(
+            json.dumps(
+                {
+                    "auto_open_last_project": True,
+                    "last_project": str(proj_file),
+                }
+            )
+        )
+        observed = {}
+
+        class Capture(gui.MainApp):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                observed["window"] = self
+
+        def unexpected_recovery_prompt(*_args, **_kwargs):
+            pytest.fail("matching autosave should not ask for recovery")
+
+        monkeypatch.setattr(gui, "MainApp", Capture)
+        monkeypatch.setattr(
+            QMessageBox, "question", staticmethod(unexpected_recovery_prompt)
+        )
+        monkeypatch.setattr(QApplication, "exec", lambda _app: 0)
+
+        assert gui.main(["--config", str(cfg_path)]) == 0
+        assert json.loads(recovery_path.read_text()) == json.loads(
+            proj_file.read_text()
+        )
+        assert observed["window"].proj_filename == str(proj_file)
+        assert observed["window"].windowTitle() == "Zoomer - Demo"
+
+    def test_offers_recovery_when_autosave_differs_from_named_project(
+        self, qapp, tmp_path, proj_file, monkeypatch
+    ):
+        cfg_path = tmp_path / "zoomer.cfg"
+        recovery_path = tmp_path / gui.AUTOSAVE_FILENAME
+        recovered_data = json.loads(proj_file.read_text())
+        recovered_data["project_name"] = "Recovered changes"
+        recovery_path.write_text(json.dumps(recovered_data))
+        cfg_path.write_text(
+            json.dumps(
+                {
+                    "auto_open_last_project": True,
+                    "last_project": str(proj_file),
+                }
+            )
+        )
+        observed = {}
+
+        class Capture(gui.MainApp):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                observed["window"] = self
+
+        monkeypatch.setattr(gui, "MainApp", Capture)
+        monkeypatch.setattr(
+            QMessageBox,
+            "question",
+            staticmethod(
+                lambda *args, **kwargs: QMessageBox.StandardButton.Yes
+            ),
+        )
+        monkeypatch.setattr(QApplication, "exec", lambda _app: 0)
+
+        assert gui.main(["--config", str(cfg_path)]) == 0
+        recovered_window = observed["window"]
+        assert recovered_window.proj_filename is None
+        assert (
+            recovered_window.proj_data["project_name"] == "Recovered changes"
+        )
+        assert recovered_window._project_modified
+
     def test_declining_recovery_discards_autosave(
         self, qapp, tmp_path, proj_file, monkeypatch
     ):

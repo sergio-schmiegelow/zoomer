@@ -1050,8 +1050,25 @@ def main(argv=None) -> int:
     except (OSError, json.JSONDecodeError):
         cfg_data = dict(CFG_DEFAULTS)
     window = MainApp(cfg_data=cfg_data, cfg_path=cfg_path)
-    window.set_image_workspace([], cfg_path.parent)
     recovery_path = window.recovery_path
+    cfg_last_project = cfg_data.get("last_project", "")
+    last_project_path = Path(cfg_last_project) if cfg_last_project else None
+    recovery_matches_saved_project = False
+    if (
+        recovery_path.is_file()
+        and last_project_path is not None
+        and last_project_path.is_file()
+    ):
+        try:
+            with recovery_path.open("r", encoding="utf-8") as recovery_file:
+                recovery_json = json.load(recovery_file)
+            with last_project_path.open("r", encoding="utf-8") as project_file:
+                project_json = json.load(project_file)
+            recovery_matches_saved_project = recovery_json == project_json
+        except (OSError, json.JSONDecodeError):
+            recovery_matches_saved_project = False
+    if recovery_matches_saved_project:
+        recovery_path.unlink(missing_ok=True)
     if recovery_path.is_file():
         recover = QMessageBox.question(
             window,
@@ -1062,6 +1079,7 @@ def main(argv=None) -> int:
         )
         if recover == QMessageBox.StandardButton.Yes:
             try:
+                window.set_image_workspace([], cfg_path.parent)
                 recovered_data = load_config(str(recovery_path))
                 recovered_data.setdefault("project_name", recovery_path.stem)
                 window.proj_filename = None
@@ -1085,7 +1103,7 @@ def main(argv=None) -> int:
                 )
         else:
             recovery_path.unlink(missing_ok=True)
-    cfg_last_project = cfg_data.get("last_project", "")
+    window.set_image_workspace([], cfg_path.parent)
     if (
         cfg_data.get("auto_open_last_project")
         and cfg_last_project
