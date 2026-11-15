@@ -51,6 +51,7 @@ projects from the directory they were written for.
 ```json
 {
   "frame_crosshair": true,
+  "marker_thickness": 2,
   "auto_open_last_project": false,
   "last_project": ""
 }
@@ -59,6 +60,7 @@ projects from the directory they were written for.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `frame_crosshair` | `true` | Draw the frame centre crosshair in the editors |
+| `marker_thickness` | `2` | Colored alignment-cross stroke and each outline edge, in pixels (clamped to `1..10`) |
 | `auto_open_last_project` | `false` | Reopen `last_project` on start |
 | `last_project` | `""` | Absolute path of the most recently opened or saved project |
 

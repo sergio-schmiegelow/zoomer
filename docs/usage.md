@@ -24,6 +24,7 @@ The window title shows the current project name.
 | Video | | Output format, video size, frame rate, duration and interpolation |
 | Export | | Choose an output AVI file and render the project |
 | Options | Frame crosshair | Show the frame centre; dragging it moves the frame |
+| Options | Marker thickness | Set colored alignment strokes and each outline edge to 1–10 pixels (default 2) |
 | Options | Auto open last project | Reopen the previous project on start |
 
 ## Workflow

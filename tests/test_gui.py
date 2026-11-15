@@ -122,9 +122,25 @@ class TestCfgOptions:
             for i in range(2)
         )
 
+    def test_marker_thickness_persists_and_updates_both_editors(
+        self, window, tmp_path
+    ):
+        spin = window.cfg_marker_thickness_spin
+        assert (spin.minimum(), spin.maximum(), spin.value()) == (1, 10, 2)
+        spin.setValue(5)
+        saved = json.loads((tmp_path / "zoomer.cfg").read_text())
+        assert saved["marker_thickness"] == 5
+        editor = window.image_fusion_editor
+        assert editor.cfg_marker_thickness == 5
+        assert all(
+            editor.pair_splitter.widget(index).editor.cfg_marker_thickness == 5
+            for index in range(2)
+        )
+
     def test_defaults(self, qapp, tmp_path):
         main = gui.MainApp(cfg_path=tmp_path / "zoomer.cfg")
         assert main.cfg_frame_crosshair_action.isChecked()
+        assert main.cfg_marker_thickness_spin.value() == 2
         assert not main.cfg_auto_open_last_project_action.isChecked()
         assert main.windowTitle() == "Zoomer - No project"
 

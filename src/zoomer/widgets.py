@@ -1071,6 +1071,7 @@ class ImageFusionEditor(QWidget):
         self.proj_image_entries = []
         self.image_paths = []
         self.cfg_frame_crosshair_enabled = True
+        self.cfg_marker_thickness = 2
         self.layout = QVBoxLayout(self)
         self.navigation = QHBoxLayout()
         self.previous_button = QPushButton("Previous pair")
@@ -1306,6 +1307,7 @@ class ImageFusionEditor(QWidget):
                 frame_width / frame_height,
                 points,
                 column,
+                marker_thickness=self.cfg_marker_thickness,
             )
             editor._fitted = True
             QTimer.singleShot(0, editor.zoom_to_frame)
@@ -1366,6 +1368,13 @@ class ImageFusionEditor(QWidget):
                 self.cfg_frame_crosshair_enabled
             )
             column.editor.update()
+
+    def set_marker_thickness(self, thickness):
+        self.cfg_marker_thickness = max(1, min(10, int(thickness)))
+        for index in range(self.pair_splitter.count()):
+            self.pair_splitter.widget(index).editor.set_marker_thickness(
+                self.cfg_marker_thickness
+            )
 
     def set_editor_points(self, image_index, points_field, points):
         column_index = image_index - self.pair_index
@@ -1611,6 +1620,7 @@ class ImageMarkersEditor(QWidget):
         frame_aspect_ratio,
         points,
         parent=None,
+        marker_thickness=2,
     ):
         super().__init__(parent)
         filename = (
@@ -1642,6 +1652,7 @@ class ImageMarkersEditor(QWidget):
         self._drag_point = None
         self._last_mouse_position = QPointF()
         self.cfg_frame_crosshair_enabled = True
+        self.cfg_marker_thickness = max(1, min(10, int(marker_thickness)))
         self._marker_animation_clock = QElapsedTimer()
         self._marker_animation_clock.start()
         self._marker_animation_timer = QTimer(self)
@@ -1655,6 +1666,10 @@ class ImageMarkersEditor(QWidget):
     @property
     def frame_height(self):
         return self.frame_width / self.frame_aspect_ratio
+
+    def set_marker_thickness(self, thickness):
+        self.cfg_marker_thickness = max(1, min(10, int(thickness)))
+        self.update()
 
     def set_points(self, points):
         if len(points) != 3:
@@ -1825,9 +1840,15 @@ class ImageMarkersEditor(QWidget):
             phase = self._marker_animation_clock.elapsed() % 1000
             brightness = phase / 500 if phase < 500 else (1000 - phase) / 500
             outline_color = QColor.fromRgbF(brightness, brightness, brightness)
+            color_size = CROSS_SIZE - 4
+            outline_size = color_size + 2 * self.cfg_marker_thickness
             for line_color, line_width, line_size in (
-                (outline_color, 6, CROSS_SIZE),
-                (color, 2, CROSS_SIZE - 4),
+                (
+                    outline_color,
+                    3 * self.cfg_marker_thickness,
+                    outline_size,
+                ),
+                (color, self.cfg_marker_thickness, color_size),
             ):
                 painter.setPen(
                     QPen(

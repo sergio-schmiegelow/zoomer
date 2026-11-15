@@ -25,7 +25,9 @@ chains all the pairs into a single video.
 - Undo/redo (`Ctrl+Z`, `Ctrl+Y`) of the last 10 project edits.
 - Projects are plain JSON files (`.zmr`) and are saved after every change.
 - Application preferences (`zoomer.cfg`): frame crosshair, auto open last
-  project.
+  project, and alignment-marker thickness (1–10 pixels, default 2).
+- **Options > Marker thickness** adjusts both colored marker strokes and
+  their animated outline together; the default is 2 pixels.
 
 ## Installation
 

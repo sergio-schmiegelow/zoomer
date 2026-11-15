@@ -59,6 +59,14 @@ class TestImageMarkersEditor:
             (5, 6),
         ]
 
+    def test_marker_thickness_is_clamped_to_supported_range(self, editor):
+        editor.set_marker_thickness(7)
+        assert editor.cfg_marker_thickness == 7
+        editor.set_marker_thickness(0)
+        assert editor.cfg_marker_thickness == 1
+        editor.set_marker_thickness(11)
+        assert editor.cfg_marker_thickness == 10
+
     def test_coordinate_round_trip(self, editor):
         point = QPointF(37.5, 80.25)
         back = editor.widget_to_image(editor.image_to_widget(point))

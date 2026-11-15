@@ -16,6 +16,8 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QSplitter,
+    QSpinBox,
+    QWidgetAction,
 )
 
 from .backend import (
@@ -93,6 +95,7 @@ class _VideoExportJob(QThread):
 
 CFG_DEFAULTS = {
     "frame_crosshair": True,
+    "marker_thickness": 2,
     "auto_open_last_project": False,
     "last_project": "",
 }
@@ -117,6 +120,9 @@ class MainApp(QMainWindow):
         )
         self.cfg_path = Path(cfg_path or Path.cwd() / CFG_FILENAME)
         self.cfg_data = {**CFG_DEFAULTS, **(cfg_data or {})}
+        self.cfg_data["marker_thickness"] = max(
+            1, min(10, int(self.cfg_data.get("marker_thickness", 2)))
+        )
         self.export_filename = ""
         self.proj_image_entries = []
         self._alignment_job = None
@@ -180,6 +186,23 @@ class MainApp(QMainWindow):
         )
         self.cfg_frame_crosshair_action.toggled.connect(
             self._set_frame_crosshair_enabled
+        )
+        marker_thickness_action = QWidgetAction(self)
+        self.cfg_marker_thickness_spin = QSpinBox(options_menu)
+        self.cfg_marker_thickness_spin.setRange(1, 10)
+        self.cfg_marker_thickness_spin.setPrefix("Marker thickness: ")
+        self.cfg_marker_thickness_spin.setToolTip(
+            "Pixel thickness of the colored alignment cross and its outline"
+        )
+        self.cfg_marker_thickness_spin.setValue(
+            int(self.cfg_data.get("marker_thickness", 2))
+        )
+        marker_thickness_action.setDefaultWidget(
+            self.cfg_marker_thickness_spin
+        )
+        options_menu.addAction(marker_thickness_action)
+        self.cfg_marker_thickness_spin.valueChanged.connect(
+            self._set_marker_thickness
         )
         self.cfg_auto_open_last_project_action = options_menu.addAction(
             "Auto open last project"
@@ -471,6 +494,9 @@ class MainApp(QMainWindow):
         self.image_fusion_editor.set_frame_crosshair_enabled(
             self.cfg_frame_crosshair_action.isChecked()
         )
+        self.image_fusion_editor.set_marker_thickness(
+            self.cfg_marker_thickness_spin.value()
+        )
         self.image_fusion_editor.pair_requested.connect(self._navigate_pair)
         self.image_fusion_editor.image_edited.connect(self._image_edited)
         self.image_fusion_editor.fusion_preview_requested.connect(
@@ -539,6 +565,13 @@ class MainApp(QMainWindow):
         self._save_cfg()
         if hasattr(self, "image_fusion_editor"):
             self.image_fusion_editor.set_frame_crosshair_enabled(enabled)
+
+    def _set_marker_thickness(self, thickness):
+        thickness = max(1, min(10, int(thickness)))
+        self.cfg_data["marker_thickness"] = thickness
+        self._save_cfg()
+        if hasattr(self, "image_fusion_editor"):
+            self.image_fusion_editor.set_marker_thickness(thickness)
 
     def _run_auto_alignment(self, index):
         if (
