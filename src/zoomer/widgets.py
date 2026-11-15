@@ -1819,16 +1819,24 @@ class ImageMarkersEditor(QWidget):
             QColor("#75e695"),
             QColor("#78aaff"),
         )
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         for point, color in zip(self.points, point_colors):
             position = self.image_to_widget(point)
             phase = self._marker_animation_clock.elapsed() % 1000
             brightness = phase / 500 if phase < 500 else (1000 - phase) / 500
             outline_color = QColor.fromRgbF(brightness, brightness, brightness)
             for line_color, line_width, line_size in (
-                (outline_color, 3, CROSS_SIZE),
-                (color, 2, CROSS_SIZE - 2),
+                (outline_color, 6, CROSS_SIZE),
+                (color, 2, CROSS_SIZE - 4),
             ):
-                painter.setPen(QPen(line_color, line_width))
+                painter.setPen(
+                    QPen(
+                        line_color,
+                        line_width,
+                        Qt.PenStyle.SolidLine,
+                        Qt.PenCapStyle.FlatCap,
+                    )
+                )
                 half_size = line_size / 2
                 painter.drawLine(
                     QPointF(position.x() - half_size, position.y()),

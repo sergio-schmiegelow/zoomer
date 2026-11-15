@@ -1,6 +1,6 @@
 import pytest
 from PyQt6.QtCore import QEvent, QPoint, QPointF, Qt
-from PyQt6.QtGui import QKeyEvent, QMouseEvent, QWheelEvent
+from PyQt6.QtGui import QColor, QImage, QKeyEvent, QMouseEvent, QWheelEvent
 from PyQt6.QtTest import QTest
 
 from conftest import write_images
@@ -133,6 +133,61 @@ class TestImageMarkersEditor:
         editor.cfg_frame_crosshair_enabled = False
         editor.update()
         assert editor.cfg_frame_crosshair_enabled is False
+
+    def test_alignment_crosses_have_no_antialiased_color_pixels(
+        self, qapp, tmp_path
+    ):
+        image_path = tmp_path / "flat.png"
+        image = QImage(120, 120, QImage.Format.Format_RGB32)
+        image.fill(QColor("white"))
+        image.save(str(image_path))
+        editor = widgets.ImageMarkersEditor(
+            str(image_path),
+            (0, 0),
+            120,
+            1.0,
+            [(60, 60), (20, 20), (100, 20)],
+        )
+        editor.resize(240, 240)
+        editor.cfg_frame_crosshair_enabled = False
+        editor.show()
+        qapp.processEvents()
+        editor._marker_animation_clock.restart()
+        rendered = editor.grab().toImage()
+        marker_position = editor.image_to_widget(editor.points[0])
+        center_x = round(marker_position.x())
+        center_y = round(marker_position.y())
+        colored_pixels = []
+        for y in range(center_y - 12, center_y + 13):
+            for x in range(center_x - 12, center_x + 13):
+                pixel = rendered.pixelColor(x, y)
+                if pixel.red() > pixel.green() and pixel.red() > pixel.blue():
+                    colored_pixels.append(pixel.name())
+        assert colored_pixels
+        assert set(colored_pixels) == {"#ff7777"}
+        arm_pixels = [
+            rendered.pixelColor(center_x + 5, center_y + offset)
+            for offset in range(-3, 3)
+        ]
+        assert all(
+            pixel.red() == pixel.green() == pixel.blue()
+            for pixel in arm_pixels[:2] + arm_pixels[4:]
+        )
+        assert [pixel.name() for pixel in arm_pixels[2:4]] == [
+            "#ff7777",
+            "#ff7777",
+        ]
+        tip_pixels = [
+            rendered.pixelColor(center_x + offset, center_y)
+            for offset in (8, 9)
+        ]
+        assert all(
+            pixel.red() == pixel.green() == pixel.blue()
+            and pixel != QColor("white")
+            for pixel in tip_pixels
+        )
+        assert rendered.pixelColor(center_x + 10, center_y) == QColor("white")
+        editor.close()
 
 
 class TestSliders:
