@@ -412,19 +412,54 @@ def _points_mean_rotation(points0: np.ndarray, points1: np.ndarray) -> float:
         for idx1 in range(idx0 + 1, num_points):
             cpx0 = points0[idx0][0] - points0[idx1][0] + 1j * (points0[idx0][1] - points0[idx1][1])
             cpx1 = points1[idx0][0] - points1[idx1][0] + 1j * (points1[idx0][1] - points1[idx1][1])
-            print(f"DEBUG angle(cpx0): {np.angle(cpx0) / np.pi * 180}, angle(cpx1): {np.angle(cpx1) / np.pi * 180}")
+            #print(f"DEBUG angle(cpx0): {np.angle(cpx0) / np.pi * 180}, angle(cpx1): {np.angle(cpx1) / np.pi * 180}")
             #Normalize the complex numbers to get the rotation
             cpx0 /= np.abs(cpx0)
             cpx1 /= np.abs(cpx1)
             cpx_ratio = (cpx0 / cpx1)
-            print(f"DEBUG angle(cpx_ratio): {np.angle(cpx_ratio) / np.pi * 180}")
+            #print(f"DEBUG angle(cpx_ratio): {np.angle(cpx_ratio) / np.pi * 180}")
             ratios_vector.append(cpx_ratio)
     mean_diff = np.mean(ratios_vector)
     mean_diff_angle = np.angle(mean_diff)
-    print(f"Mean angle: {mean_diff_angle / np.pi * 180}")
+    #print(f"Mean angle: {mean_diff_angle / np.pi * 180}")
     return mean_diff_angle
+
 # -------------------------------------------------------------------------
-def _interpolate_points_linear(
+def _rotate_points(points, angle):
+    rotation_matrix = np.array([
+        [np.cos(angle), -np.sin(angle)],
+        [np.sin(angle), np.cos(angle)]
+    ])
+    return points @ rotation_matrix.T
+
+# -------------------------------------------------------------------------
+def _interpolate_points_by_decomposition(points0, points1, step, log_scale = True):
+    #Split the transformation into scale, rotation, and translation components
+    scale =    _points_mean_size_ratio(points0, points1)
+    rotation = _points_mean_rotation(points0, points1)
+    centroid0 = np.mean(points0, axis=0)
+    centroid1 = np.mean(points1, axis=0)
+    zero_mean_points0 = points0 - centroid0
+
+    #Calculate the residual by doing the inverse transformation on points1
+    zero_mean_points1 = points1 - centroid1
+    rotated_points1 = _rotate_points(zero_mean_points1, -rotation)
+    scaled_points1 = rotated_points1 / scale
+    residual = scaled_points1 - zero_mean_points0
+
+    step_angle = rotation * step
+    if log_scale:
+        step_scale = np.exp(np.log(scale) * step)
+    else:
+        step_scale = (scale - 1) * step + 1
+    step_centroid = (1 - step) * centroid0 + step * centroid1
+    step_residual = residual * step
+    rotated_points0 = _rotate_points(zero_mean_points0 + step_residual, step_angle)
+    rotated_zoomed_points0 = rotated_points0 * step_scale
+    return rotated_zoomed_points0 + step_centroid
+
+# -------------------------------------------------------------------------
+def deprecated_interpolate_points_linear(
     points0: np.ndarray, points1: np.ndarray, alpha: float
 ) -> np.ndarray:
     # Interpolate between two sets of points linearly based on the alpha value.
@@ -432,14 +467,13 @@ def _interpolate_points_linear(
 
 
 # -------------------------------------------------------------------------
-def _interpolate_points_log(
+def deprecated_interpolate_points_log(
     points0: np.ndarray, points1: np.ndarray, alpha: float
 ) -> np.ndarray:
     # Interpolate between two sets of points based on the specified
     # interpolation method.
     # Calculate the relative size of the two sets of points
     size_ratio = _points_mean_size_ratio(points0, points1)
-    mean_rotation = _points_mean_rotation(points0, points1)
     log_size_ratio = np.log(size_ratio)
     interpolated_log_size = alpha * log_size_ratio
     linear_size_ratio = np.exp(interpolated_log_size)
@@ -461,9 +495,9 @@ def _interpolate_points(
     interpolation_method: str = "log",
 ) -> np.ndarray:
     if interpolation_method == "linear":
-        return _interpolate_points_linear(points0, points1, alpha)
+        return _interpolate_points_by_decomposition(points0, points1, alpha, False)
     elif interpolation_method == "log":
-        return _interpolate_points_log(points0, points1, alpha)
+        return _interpolate_points_by_decomposition(points0, points1, alpha, True)
     else:
         raise ValueError(
             f"Unknown interpolation method: {interpolation_method}"
