@@ -401,7 +401,28 @@ def _points_mean_size_ratio(points0: np.ndarray, points1: np.ndarray) -> float:
     mean_size1 = _points_mean_size(points1)
     return mean_size1 / mean_size0 if mean_size0 != 0 else float("inf")
 
-
+# -------------------------------------------------------------------------
+def _points_mean_rotation(points0: np.ndarray, points1: np.ndarray) -> float:
+    # Calculate the mean rotation between two sets of points forming triangles.
+    if len(points0) != len(points1):
+        raise ValueError("Point sets must have the same number of points.")
+    num_points = len(points0)
+    ratios_vector = []
+    for idx0 in range(num_points):
+        for idx1 in range(idx0 + 1, num_points):
+            cpx0 = points0[idx0][0] - points0[idx1][0] + 1j * (points0[idx0][1] - points0[idx1][1])
+            cpx1 = points1[idx0][0] - points1[idx1][0] + 1j * (points1[idx0][1] - points1[idx1][1])
+            print(f"DEBUG angle(cpx0): {np.angle(cpx0) / np.pi * 180}, angle(cpx1): {np.angle(cpx1) / np.pi * 180}")
+            #Normalize the complex numbers to get the rotation
+            cpx0 /= np.abs(cpx0)
+            cpx1 /= np.abs(cpx1)
+            cpx_ratio = (cpx0 / cpx1)
+            print(f"DEBUG angle(cpx_ratio): {np.angle(cpx_ratio) / np.pi * 180}")
+            ratios_vector.append(cpx_ratio)
+    mean_diff = np.mean(ratios_vector)
+    mean_diff_angle = np.angle(mean_diff)
+    print(f"Mean angle: {mean_diff_angle / np.pi * 180}")
+    return mean_diff_angle
 # -------------------------------------------------------------------------
 def _interpolate_points_linear(
     points0: np.ndarray, points1: np.ndarray, alpha: float
@@ -418,6 +439,7 @@ def _interpolate_points_log(
     # interpolation method.
     # Calculate the relative size of the two sets of points
     size_ratio = _points_mean_size_ratio(points0, points1)
+    mean_rotation = _points_mean_rotation(points0, points1)
     log_size_ratio = np.log(size_ratio)
     interpolated_log_size = alpha * log_size_ratio
     linear_size_ratio = np.exp(interpolated_log_size)
