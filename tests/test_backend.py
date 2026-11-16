@@ -41,20 +41,20 @@ class TestImageClass:
 class TestProjectFiles:
     def test_save_writes_paths_not_objects(self, tmp_path, proj_data):
         target = tmp_path / "out.zmr"
-        backend.save_config(str(target), proj_data)
+        backend.save_project(str(target), proj_data)
         saved = json.loads(target.read_text())
         assert all(isinstance(e["image"], str) for e in saved["images_data"])
         assert saved["project_name"] == "Demo"
 
     def test_save_does_not_mutate_input(self, tmp_path, proj_data):
-        backend.save_config(str(tmp_path / "out.zmr"), proj_data)
+        backend.save_project(str(tmp_path / "out.zmr"), proj_data)
         first = proj_data["images_data"][0]["image"]
         assert isinstance(first, backend.ImageClass)
 
     def test_round_trip(self, tmp_path, proj_data):
         target = tmp_path / "out.zmr"
-        backend.save_config(str(target), proj_data)
-        loaded = backend.load_config(str(target))
+        backend.save_project(str(target), proj_data)
+        loaded = backend.load_project(str(target))
         assert len(loaded["images_data"]) == 3
         assert isinstance(
             loaded["images_data"][0]["image"], backend.ImageClass

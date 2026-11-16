@@ -26,8 +26,8 @@ from .backend import (
     auto_align_images,
     create_blended_frame,
     get_supported_video_formats,
-    load_config,
-    save_config,
+    load_project,
+    save_project,
 )
 from .widgets import (
     ImageFilesAndPreviewArea,
@@ -279,7 +279,7 @@ class MainApp(QMainWindow):
             )
             return
         try:
-            proj_loaded = load_config(filename)
+            proj_loaded = load_project(filename)
         except Exception as error:
             print(error)
             QMessageBox.warning(
@@ -302,7 +302,7 @@ class MainApp(QMainWindow):
     def save_project(self, _checked=False):
         if not self.proj_filename:
             return self.save_as()
-        save_config(self.proj_filename, self.proj_data)
+        save_project(self.proj_filename, self.proj_data)
         self.save_autosave(mark_modified=False)
         self._remember_project(self.proj_filename)
         self._set_project_modified(False)
@@ -330,7 +330,7 @@ class MainApp(QMainWindow):
             return False
         self.proj_filename = str(named_path)
         self.proj_data["project_name"] = Path(self.proj_filename).stem
-        save_config(self.proj_filename, self.proj_data)
+        save_project(self.proj_filename, self.proj_data)
         self._remember_project(self.proj_filename)
         self.save_autosave(mark_modified=False)
         self._set_project_modified(False)
@@ -385,7 +385,7 @@ class MainApp(QMainWindow):
         self.proj_video_settings = self.proj_data["video_data"]
         self.proj_image_entries = self.proj_data["images_data"]
         self._apply_restored_config(dict(self.proj_data))
-        save_config(self.proj_filename, self.proj_data)
+        save_project(self.proj_filename, self.proj_data)
         self._remember_project(self.proj_filename)
         self.save_autosave(mark_modified=False)
         self._set_project_modified(False)
@@ -928,7 +928,7 @@ class MainApp(QMainWindow):
         temporary_path = self.recovery_path.with_name(
             self.recovery_path.name + ".tmp"
         )
-        save_config(str(temporary_path), self.proj_data)
+        save_project(str(temporary_path), self.proj_data)
         temporary_path.replace(self.recovery_path)
         if mark_modified:
             self._set_project_modified(True)
@@ -1080,7 +1080,7 @@ def main(argv=None) -> int:
         if recover == QMessageBox.StandardButton.Yes:
             try:
                 window.set_image_workspace([], cfg_path.parent)
-                recovered_data = load_config(str(recovery_path))
+                recovered_data = load_project(str(recovery_path))
                 recovered_data.setdefault("project_name", recovery_path.stem)
                 window.proj_filename = None
                 window.proj_directory = recovery_path.parent
@@ -1111,7 +1111,7 @@ def main(argv=None) -> int:
     ):
         window.proj_filename = cfg_last_project
         try:
-            proj_loaded = load_config(cfg_last_project)
+            proj_loaded = load_project(cfg_last_project)
             proj_loaded.setdefault("project_name", Path(cfg_last_project).stem)
             window.proj_directory = Path(cfg_last_project).resolve().parent
             window._apply_restored_config(proj_loaded)

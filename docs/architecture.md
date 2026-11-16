@@ -16,7 +16,7 @@ objects it is given); `backend` imports neither.
 | Item | Role |
 | --- | --- |
 | `ImageClass` | Image file wrapper: OpenCV pixels plus a cache slot for the Qt image |
-| `load_config` / `save_config` | Read and write `.zmr` files; `save_config` converts `ImageClass` objects to paths without mutating the input |
+| `load_project` / `save_project` | Read and write `.zmr` files; `save_project` converts `ImageClass` objects to paths without mutating the input |
 | `create_blended_frame` | Renders the cross-fade of image `index` and `index + 1` for a `size_alpha` and `blend_alpha` |
 | `auto_align_images` | Crops both frames, matches SIFT features and stores the three best matches as the pair's markers |
 | `get_supported_video_formats` | Probes common container/FourCC candidates by writing a temporary frame, returning only formats supported by the installed OpenCV build |

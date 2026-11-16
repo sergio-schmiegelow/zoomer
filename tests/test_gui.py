@@ -13,8 +13,8 @@ from zoomer import gui
 from zoomer.backend import (
     ImageClass,
     get_supported_video_formats,
-    load_config,
-    save_config,
+    load_project,
+    save_project,
 )
 from zoomer.widgets import NewProjectDialog
 
@@ -22,7 +22,7 @@ from zoomer.widgets import NewProjectDialog
 @pytest.fixture
 def window(qapp, tmp_path, proj_data, no_dialogs):
     project_path = tmp_path / "demo.zmr"
-    save_config(str(project_path), proj_data)
+    save_project(str(project_path), proj_data)
     main = gui.MainApp(proj_data, project_path, {}, tmp_path / "zoomer.cfg")
     main.set_image_workspace(proj_data["images_data"], tmp_path)
     main.show()
@@ -128,13 +128,13 @@ class TestProjects:
         self, window, tmp_path
     ):
         named_path = tmp_path / "demo.zmr"
-        original_named_data = load_config(str(named_path))
+        original_named_data = load_project(str(named_path))
         window._image_edited(
             0, "frame", {"upper_left": (1, 2), "width": 100, "height": 50}
         )
         recovery_path = tmp_path / gui.AUTOSAVE_FILENAME
-        recovered = load_config(str(recovery_path))
-        named_after_edit = load_config(str(named_path))
+        recovered = load_project(str(recovery_path))
+        named_after_edit = load_project(str(named_path))
         assert recovered["images_data"][0]["frame"] == [[1, 2], [101, 52]]
         assert (
             named_after_edit["images_data"][0]["frame"]
@@ -149,8 +149,8 @@ class TestProjects:
         )
         recovery_path = tmp_path / gui.AUTOSAVE_FILENAME
         window.save_project()
-        named = load_config(str(tmp_path / "demo.zmr"))
-        recovered = load_config(str(recovery_path))
+        named = load_project(str(tmp_path / "demo.zmr"))
+        recovered = load_project(str(recovery_path))
         expected_frame = [[3, 4], [83, 44]]
         assert named["images_data"][0]["frame"] == expected_frame
         assert recovered["images_data"][0]["frame"] == expected_frame
@@ -426,7 +426,7 @@ class TestClosePrompt:
             ),
         )
         assert window.close()
-        saved = load_config(str(tmp_path / "demo.zmr"))
+        saved = load_project(str(tmp_path / "demo.zmr"))
         assert saved["images_data"][0]["frame"] == [[4, 5], [64, 35]]
         assert not window._project_modified
 

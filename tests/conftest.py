@@ -9,7 +9,7 @@ import numpy as np  # noqa: E402
 import pytest  # noqa: E402
 from PyQt6.QtWidgets import QApplication, QMessageBox  # noqa: E402
 
-from zoomer.backend import ImageClass, save_config  # noqa: E402
+from zoomer.backend import ImageClass, save_project  # noqa: E402
 
 IMAGE_SIZE = (160, 90)  # (width, height); equals the video size below.
 
@@ -92,5 +92,5 @@ def proj_data(tmp_path):
 @pytest.fixture
 def proj_file(tmp_path, proj_data):
     path = tmp_path / "demo.zmr"
-    save_config(str(path), proj_data)
+    save_project(str(path), proj_data)
     return path

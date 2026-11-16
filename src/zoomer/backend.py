@@ -127,7 +127,7 @@ class ImageClass:
 
 
 # -------------------------------------------------------------------------
-def load_config(filename: str) -> dict:
+def load_project(filename: str) -> dict:
     with open(filename, "r") as f:
         proj_data = json.load(f)
     for image_data in proj_data["images_data"]:
@@ -136,7 +136,7 @@ def load_config(filename: str) -> dict:
 
 
 # -------------------------------------------------------------------------
-def save_config(filename: str, proj_data: dict) -> None:
+def save_project(filename: str, proj_data: dict) -> None:
     proj_data_copy = dict(proj_data)
     proj_data_copy["images_data"] = []
     for image_data in proj_data["images_data"]:
@@ -949,14 +949,14 @@ class VideoGenerator:
 # -------------------------------------------------------------------------
 if __name__ == "__main__":
     proj_file = "seed.zmr"
-    proj_data = load_config(proj_file)
+    proj_data = load_project(proj_file)
     video_generator = VideoGenerator(proj_data, "seed.avi")
     video_generator.generate_full_video()
     quit()
 
     proj_file = "prat.json"
-    proj_data = load_config(proj_file)
-    save_config("out.json", proj_data)
+    proj_data = load_project(proj_file)
+    save_project("out.json", proj_data)
 
     video_dims = np.array(proj_data["video_data"]["size"], dtype=np.int32)
 
