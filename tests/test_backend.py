@@ -7,14 +7,14 @@ from conftest import IMAGE_SIZE, make_proj_data, triangle, write_images
 from zoomer import backend
 
 
-def test_convert_3_points_and_frame_to_video_coordinates():
+def test_convert_points_and_frame_to_video_coordinates():
     points = np.array([[101, 202], [103, 204], [105, 206]], dtype=np.float32)
     frame = np.array([[100, 200], [200, 400]], dtype=np.float32)
     video_dims = np.array([960, 540], dtype=np.float32)
     expected = np.array(
         [[9.6, 5.4], [28.8, 10.8], [48.0, 16.2]], dtype=np.float32
     )
-    output = backend.convert_3_points_and_frame_to_video_coordinates(
+    output = backend.convert_points_and_frame_to_video_coordinates(
         points, frame, video_dims
     )
     assert np.allclose(output, expected)

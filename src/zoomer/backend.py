@@ -233,7 +233,7 @@ class _AffineTransformer:
 
 
 # -------------------------------------------------------------------------
-def convert_3_points_and_frame_to_video_coordinates(
+def convert_points_and_frame_to_video_coordinates(
     points: np.ndarray, frame: np.ndarray, video_dims: np.ndarray
 ) -> np.ndarray:
     out_points = np.zeros(points.shape, dtype=np.float32)
