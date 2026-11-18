@@ -372,15 +372,6 @@ def _extract_video_frame_from_image(
     )
     return video_frame
 
-
-# -------------------------------------------------------------------------
-def _interpolate_points(
-    points0: np.ndarray, points1: np.ndarray, alpha: float
-) -> np.ndarray:
-    # Interpolate between two sets of points based on the alpha value.
-    return (1 - alpha) * points0 + alpha * points1
-
-
 # -------------------------------------------------------------------------
 def _points_mean_size(points: np.ndarray) -> float:
     # Calculate the mean size of a triangle formed by three points.
@@ -433,30 +424,31 @@ def _rotate_points(points, angle):
     return points @ rotation_matrix.T
 
 # -------------------------------------------------------------------------
-def _interpolate_points_by_decomposition(points0, points1, step, log_scale = True):
+def _interpolate_points_by_decomposition(points0, points1, video_size, step, log_scale = True):
     #Split the transformation into scale, rotation, and translation components
     scale =    _points_mean_size_ratio(points0, points1)
     rotation = _points_mean_rotation(points0, points1)
-    centroid0 = np.mean(points0, axis=0)
-    centroid1 = np.mean(points1, axis=0)
-    zero_mean_points0 = points0 - centroid0
+
+    #The center of rotation is the center of the video frame
+    rot_center = video_size / 2
+    
+    zero_centered_points0 = points0 - rot_center
 
     #Calculate the residual by doing the inverse transformation on points1
-    zero_mean_points1 = points1 - centroid1
-    rotated_points1 = _rotate_points(zero_mean_points1, -rotation)
+    zero_centered_points1 = points1 - rot_center
+    rotated_points1 = _rotate_points(zero_centered_points1, -rotation)
     scaled_points1 = rotated_points1 / scale
-    residual = scaled_points1 - zero_mean_points0
+    residual = scaled_points1 - zero_centered_points0
 
     step_angle = rotation * step
     if log_scale:
         step_scale = np.exp(np.log(scale) * step)
     else:
         step_scale = (scale - 1) * step + 1
-    step_centroid = (1 - step) * centroid0 + step * centroid1
     step_residual = residual * step
-    rotated_points0 = _rotate_points(zero_mean_points0 + step_residual, step_angle)
+    rotated_points0 = _rotate_points(zero_centered_points0 + step_residual, step_angle)
     rotated_zoomed_points0 = rotated_points0 * step_scale
-    return rotated_zoomed_points0 + step_centroid
+    return rotated_zoomed_points0 + rot_center
 
 # -------------------------------------------------------------------------
 def deprecated_interpolate_points_linear(
@@ -491,13 +483,14 @@ def deprecated_interpolate_points_log(
 def _interpolate_points(
     points0: np.ndarray,
     points1: np.ndarray,
+    video_size: np.ndarray,
     alpha: float,
     interpolation_method: str = "log",
 ) -> np.ndarray:
     if interpolation_method == "linear":
-        return _interpolate_points_by_decomposition(points0, points1, alpha, False)
+        return _interpolate_points_by_decomposition(points0, points1, video_size, alpha, False)
     elif interpolation_method == "log":
-        return _interpolate_points_by_decomposition(points0, points1, alpha, True)
+        return _interpolate_points_by_decomposition(points0, points1, video_size, alpha, True)
     else:
         raise ValueError(
             f"Unknown interpolation method: {interpolation_method}"
@@ -528,6 +521,7 @@ def _create_intermediate_frame(
     interpolated_points = _interpolate_points(
         video_transformed_points0,
         video_transformed_points1,
+        video_size,
         size_alpha,
         interpolation_method,
     )
