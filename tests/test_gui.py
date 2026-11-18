@@ -535,6 +535,29 @@ class TestVideoPreview:
         QTest.qWait(500)
         assert self.preview(window)._total_frames == 10
 
+    def test_preview_includes_pauses(self, window):
+        window.proj_video_settings.update(pause_before=0.2, pause_after=0.3)
+        window._refresh_video_preview()
+        assert self.preview(window)._total_frames == 15
+
+    def test_video_settings_save_pauses_and_refresh_preview(
+        self, window, tmp_path, monkeypatch
+    ):
+        def accept_settings(dialog):
+            dialog.video_settings.pause_before_spin.setValue(0.2)
+            dialog.video_settings.pause_after_spin.setValue(0.3)
+            return 1
+
+        monkeypatch.setattr(gui.VideoSettingsDialog, "exec", accept_settings)
+        window.open_video_settings()
+        window._refresh_video_preview()
+        assert self.preview(window)._total_frames == 15
+        window.save_project()
+        settings = load_project(str(tmp_path / "demo.zmr"))["video_data"]
+        assert settings["pause_before"] == 0.2
+        assert settings["duration"] == 1
+        assert settings["pause_after"] == 0.3
+
     def test_calculation_errors_are_shown_on_the_canvas(self, window):
         window._image_edited(1, "prev_points", triangle(1.0))
         QTest.qWait(500)
@@ -552,6 +575,27 @@ class TestVideoPreview:
 
 
 class TestVideoExport:
+    def test_export_job_writes_pause_frames(self, window, monkeypatch):
+        window.proj_video_settings.update(pause_before=0.2, pause_after=0.3)
+        window._refresh_video_preview()
+        generator = window._video_generator
+        written = []
+        monkeypatch.setattr(generator, "open_video_writer", lambda: True)
+        monkeypatch.setattr(generator, "close_video_writer", lambda: None)
+        monkeypatch.setattr(
+            generator,
+            "generate_video_frame",
+            lambda index, alpha: (index, alpha),
+        )
+        monkeypatch.setattr(generator, "save_video_frame", written.append)
+        job = gui._VideoExportJob(generator, generator.get_total_frames())
+        job.run()
+        assert not job.error_message
+        assert len(written) == 15
+        assert written[:3] == [written[2]] * 3
+        assert written[-4:] == [written[-4]] * 4
+        assert written[2] != written[-4]
+
     def prepare_generator(self, window, monkeypatch, frame_count=4):
         QTest.qWait(300)
         generator = window._video_generator

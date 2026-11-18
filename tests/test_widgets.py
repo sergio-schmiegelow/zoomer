@@ -324,7 +324,9 @@ class TestVideoSettingsDialog:
             "format": selected_format,
             "size": (1280, 720),
             "FPS": 24,
+            "pause_before": 1.25,
             "duration": 5,
+            "pause_after": 2.5,
             "interpolation_method": "linear",
         }
         settings = widgets.VideoSettingsDialog(data).settings()
@@ -332,9 +334,23 @@ class TestVideoSettingsDialog:
             "format": selected_format,
             "size": (1280, 720),
             "FPS": 24,
+            "pause_before": 1.25,
             "duration": 5.0,
+            "pause_after": 2.5,
             "interpolation_method": "linear",
         }
+
+    def test_existing_settings_default_to_no_pauses(self, qapp):
+        settings = widgets.VideoSettingsWidget({"duration": 7})
+        assert settings.settings()["pause_before"] == 0
+        assert settings.settings()["duration"] == 7
+        assert settings.settings()["pause_after"] == 0
+        settings.pause_before_spin.setValue(1.5)
+        settings.duration_spin.setValue(3.25)
+        settings.pause_after_spin.setValue(2)
+        assert settings.settings()["pause_before"] == 1.5
+        assert settings.settings()["duration"] == 3.25
+        assert settings.settings()["pause_after"] == 2
 
     def test_custom_size(self, qapp):
         settings = widgets.VideoSettingsDialog(

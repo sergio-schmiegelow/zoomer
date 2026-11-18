@@ -21,7 +21,7 @@ The window title shows the current project name.
 | File | Save project as | Save under a new name (`.zmr` is enforced) |
 | File | New project | Ask for a name and the video settings, then a file |
 | Edit | Undo / Redo (`Ctrl+Z` / `Ctrl+Y`) | Last 10 project edits |
-| Video | | Output format, video size, frame rate, duration and interpolation |
+| Video | | Output format, video size, frame rate, pauses, zooming duration and interpolation |
 | Export | | Choose an output AVI file and render the project |
 | Options | Frame crosshair | Show the frame centre; dragging it moves the frame |
 | Options | Marker thickness | Set colored alignment strokes and each outline edge to 1–10 pixels (default 2) |
@@ -90,6 +90,10 @@ The output format selected in **Video** is used for export, and the extension
 is corrected to match it. Formats are offered only when the current OpenCV
 build can open a writer and encode a probe frame for that container/codec.
 The available list can differ across platforms and OpenCV builds.
+
+Set **Pause before** and **Pause after** in **Video** to hold the first and
+last zoom frames. **Zooming duration** controls the transition itself; both
+pauses default to zero and are also shown in the video preview.
 
 Export renders as quickly as frame generation permits; the playback FPS
 limit applies to preview playback, not file export. If the writer cannot be

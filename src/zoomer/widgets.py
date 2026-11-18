@@ -1457,11 +1457,23 @@ class VideoSettingsWidget(QWidget):
         layout.addRow("Framerate", self.frame_rate_combo)
         layout.addRow("Custom framerate", self.custom_frame_rate)
 
+        self.pause_before_spin = QDoubleSpinBox()
+        self.pause_before_spin.setRange(0, 86400)
+        self.pause_before_spin.setDecimals(2)
+        self.pause_before_spin.setSuffix(" s")
+        layout.addRow("Pause before", self.pause_before_spin)
+
         self.duration_spin = QDoubleSpinBox()
         self.duration_spin.setRange(0.01, 86400)
         self.duration_spin.setDecimals(2)
         self.duration_spin.setSuffix(" s")
-        layout.addRow("Duration", self.duration_spin)
+        layout.addRow("Zooming duration", self.duration_spin)
+
+        self.pause_after_spin = QDoubleSpinBox()
+        self.pause_after_spin.setRange(0, 86400)
+        self.pause_after_spin.setDecimals(2)
+        self.pause_after_spin.setSuffix(" s")
+        layout.addRow("Pause after", self.pause_after_spin)
 
         self.interpolation_method_combo = QComboBox()
         self.interpolation_method_combo.addItem("Logarithmic", "log")
@@ -1520,7 +1532,9 @@ class VideoSettingsWidget(QWidget):
                 self.frame_rate_combo.count() - 1
             )
         self.custom_frame_rate.setValue(frame_rate)
+        self.pause_before_spin.setValue(video_data.get("pause_before", 0))
         self.duration_spin.setValue(video_data.get("duration", 10))
+        self.pause_after_spin.setValue(video_data.get("pause_after", 0))
         interpolation_method = video_data.get("interpolation_method", "log")
         method_index = self.interpolation_method_combo.findData(
             interpolation_method
@@ -1555,7 +1569,9 @@ class VideoSettingsWidget(QWidget):
             "FPS": frame_rate
             if frame_rate is not None
             else self.custom_frame_rate.value(),
+            "pause_before": self.pause_before_spin.value(),
             "duration": self.duration_spin.value(),
+            "pause_after": self.pause_after_spin.value(),
             "interpolation_method": (
                 self.interpolation_method_combo.currentData()
             ),

@@ -1,5 +1,6 @@
 import json
 
+import cv2 as cv
 import numpy as np
 import pytest
 
@@ -121,6 +122,112 @@ class TestVideoGenerator:
         success, error = generator.perform_video_calculations()
         assert success and error is None
         assert generator.get_total_frames() == 10
+
+    @pytest.mark.parametrize(
+        ("before", "after", "before_count", "after_count"),
+        [(0, 0, 0, 0), (0.25, 0, 2, 0), (0, 0.3, 0, 3), (0.2, 0.3, 2, 3)],
+    )
+    def test_pause_frames_hold_zoom_endpoints(
+        self, tmp_path, before, after, before_count, after_count
+    ):
+        proj = make_proj_data(tmp_path)
+        generator = backend.VideoGenerator(proj, "")
+        assert generator.perform_video_calculations() == (True, None)
+        zoom_frames = generator._indexes_size_alphas_list.copy()
+        proj["video_data"].update(pause_before=before, pause_after=after)
+        assert generator.perform_video_calculations() == (True, None)
+        frames = generator._indexes_size_alphas_list
+        assert frames == (
+            [zoom_frames[0]] * before_count
+            + zoom_frames
+            + [zoom_frames[-1]] * after_count
+        )
+        assert generator.get_total_frames() == 10 + before_count + after_count
+        if before_count and after_count:
+            assert np.array_equal(
+                generator.generate_video_frame_on_position(0),
+                generator.generate_video_frame_on_position(before_count),
+            )
+            assert np.array_equal(
+                generator.generate_video_frame_on_position(len(frames) - 1),
+                generator.generate_video_frame_on_position(
+                    len(frames) - after_count - 1
+                ),
+            )
+
+    def test_pause_durations_must_not_be_negative(self, tmp_path):
+        proj = make_proj_data(tmp_path)
+        proj["video_data"]["pause_before"] = -1
+        generator = backend.VideoGenerator(proj, "")
+        success, error = generator.perform_video_calculations()
+        assert not success and "negative" in error
+
+    def test_zoom_duration_must_produce_a_frame(self, tmp_path):
+        proj = make_proj_data(tmp_path)
+        proj["video_data"]["duration"] = 0.01
+        generator = backend.VideoGenerator(proj, "")
+        success, error = generator.perform_video_calculations()
+        assert not success and "at least one frame" in error
+
+    def test_writer_preserves_fractional_fps(self, tmp_path):
+        proj = make_proj_data(tmp_path)
+        proj["video_data"]["FPS"] = 12.5
+        target = tmp_path / "fractional.avi"
+        generator = backend.VideoGenerator(proj, str(target))
+        assert generator.open_video_writer()
+        generator.save_video_frame(np.zeros((90, 160, 3), dtype=np.uint8))
+        generator.close_video_writer()
+        video = cv.VideoCapture(str(target))
+        assert video.isOpened()
+        assert video.get(cv.CAP_PROP_FPS) == pytest.approx(12.5)
+        video.release()
+
+    def test_full_export_writes_pause_frames(self, tmp_path, monkeypatch):
+        proj = make_proj_data(tmp_path)
+        proj["video_data"].update(pause_before=0.2, pause_after=0.3)
+        generator = backend.VideoGenerator(proj, "")
+        written = []
+        monkeypatch.setattr(generator, "open_video_writer", lambda: True)
+        monkeypatch.setattr(generator, "close_video_writer", lambda: None)
+        monkeypatch.setattr(
+            generator,
+            "generate_video_frame",
+            lambda index, alpha: (index, alpha),
+        )
+        monkeypatch.setattr(generator, "save_video_frame", written.append)
+        assert generator.generate_full_video() == (True, None)
+        assert len(written) == 15
+        assert written[:3] == [written[2]] * 3
+        assert written[-4:] == [written[-4]] * 4
+        assert written[2] != written[-4]
+
+    def test_exported_video_contains_pauses(self, tmp_path, monkeypatch):
+        proj = make_proj_data(tmp_path)
+        proj["video_data"].update(pause_before=0.2, pause_after=0.3)
+        target = tmp_path / "pauses.avi"
+        generator = backend.VideoGenerator(proj, str(target))
+        monkeypatch.setattr(
+            generator,
+            "generate_video_frame",
+            lambda index, alpha: np.full(
+                (90, 160, 3), 32 + int(75 * (index + alpha)), dtype=np.uint8
+            ),
+        )
+        assert generator.generate_full_video() == (True, None)
+        video = cv.VideoCapture(str(target))
+        assert video.isOpened()
+        frames = []
+        while True:
+            success, frame = video.read()
+            if not success:
+                break
+            frames.append(frame)
+        video.release()
+        assert len(frames) == 15
+        for frame in frames[:3]:
+            assert np.mean(frame) == pytest.approx(32, abs=5)
+        for frame in frames[-4:]:
+            assert np.mean(frame) == pytest.approx(182, abs=5)
 
     def test_frame_has_video_size(self, tmp_path):
         generator = backend.VideoGenerator(make_proj_data(tmp_path), "")

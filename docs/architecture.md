@@ -109,9 +109,10 @@ video scrubber for manual seeking.
 
 ## Shared video settings
 
-`VideoSettingsWidget` owns the video-format, size, frame-rate, duration and
-interpolation controls. `VideoSettingsDialog` embeds it for edits; the
-`NewProjectDialog` embeds the same widget alongside the project-name field.
+`VideoSettingsWidget` owns the video-format, size, frame-rate, pauses,
+zooming-duration and interpolation controls. `VideoSettingsDialog` embeds it
+for edits; `NewProjectDialog` embeds the same widget alongside the project-name
+field.
 The detected output-format list is cached for the process lifetime because
 OpenCV does not expose a complete container-format enumeration API.
 

@@ -12,7 +12,9 @@ writes absolute image paths.
   "video_data": {
     "size": [1920, 1080],
     "FPS": 30,
+    "pause_before": 2,
     "duration": 10,
+    "pause_after": 2,
     "interpolation_method": "log",
     "format": "avi"
   },
@@ -33,7 +35,9 @@ writes absolute image paths.
 | `project_name` | Name shown in the window title |
 | `video_data.size` | Output `[width, height]` in pixels |
 | `video_data.FPS` | Frames per second |
-| `video_data.duration` | Length in seconds; frames = `FPS * duration` |
+| `video_data.pause_before` | Seconds to hold the first zoom frame (default `0`) |
+| `video_data.duration` | Zooming duration in seconds (existing projects retain this value) |
+| `video_data.pause_after` | Seconds to hold the last zoom frame (default `0`) |
 | `video_data.interpolation_method` | `"log"` (default) or `"linear"` marker interpolation |
 | `video_data.format` | Output container extension, selected from formats probed by the active OpenCV installation (default `"avi"`) |
 | `images_data[].image` | Image path |
@@ -45,6 +49,9 @@ writes absolute image paths.
 A relative image path is resolved against the current working directory
 when the project is opened, so keep paths absolute (as saved) or open
 projects from the directory they were written for.
+
+Each duration is converted separately to a whole number of frames by
+truncating `FPS * seconds`. Preview and export include the two pauses.
 
 ## Application config (`zoomer.cfg`)
 

@@ -844,13 +844,20 @@ def _calculate_zoom_array(proj_data: dict) -> tuple:
 
 # -------------------------------------------------------------------------
 def _calculate_frames_fusion_and_size_alpha(proj_data: dict):
+    video_data = proj_data["video_data"]
+    fps = video_data["FPS"]
+    pause_before = video_data.get("pause_before", 0)
+    pause_after = video_data.get("pause_after", 0)
+    if pause_before < 0 or pause_after < 0:
+        return None, "Pause durations cannot be negative"
+    total_frames = int(fps * video_data["duration"])
+    if total_frames < 1:
+        return None, "Zooming duration must produce at least one frame"
+
     zoom_array, error_msg = _calculate_zoom_array(proj_data)
     if error_msg is not None:
         return None, error_msg
     log_zoom_array = np.log(zoom_array)
-    total_frames = int(
-        proj_data["video_data"]["FPS"] * proj_data["video_data"]["duration"]
-    )
     frames_logs_zooms = np.linspace(0, log_zoom_array[-1], num=total_frames)
     print("DEBUG - Frames logs zooms:", frames_logs_zooms)
     indexes_steps_list = []
@@ -866,7 +873,14 @@ def _calculate_frames_fusion_and_size_alpha(proj_data: dict):
             log_zoom_array[first_index + 1] - log_zoom_array[first_index]
         )
         indexes_steps_list.append((first_index, step))
-    return indexes_steps_list, None
+    before_frames = int(fps * pause_before)
+    after_frames = int(fps * pause_after)
+    return (
+        [indexes_steps_list[0]] * before_frames
+        + indexes_steps_list
+        + [indexes_steps_list[-1]] * after_frames,
+        None,
+    )
 
 
 # -------------------------------------------------------------------------
@@ -900,7 +914,7 @@ class VideoGenerator:
         self._video_writer = cv.VideoWriter(
             self.filename,
             cv.VideoWriter_fourcc(*fourcc),
-            int(self.proj_data["video_data"]["FPS"]),
+            float(self.proj_data["video_data"]["FPS"]),
             tuple(
                 np.array(self.proj_data["video_data"]["size"], dtype=np.int32)
             ),
