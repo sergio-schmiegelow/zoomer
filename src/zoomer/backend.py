@@ -251,66 +251,6 @@ def convert_points_and_frame_to_video_coordinates(
 
 
 # -------------------------------------------------------------------------
-def generate_image_with_markers(
-    img: np.ndarray, frame, prev_points: np.ndarray, next_points: np.ndarray
-) -> np.ndarray:
-    if prev_points is not None:
-        for idx, point in enumerate(prev_points):
-            # draw a "plus sign" at the previous points
-            color = CROSS_COLORS[idx]  # Alternate colors for previous points
-            cv.line(
-                img,
-                (int(point[0]) - CROSS_SIZE, int(point[1])),
-                (int(point[0]) + CROSS_SIZE, int(point[1])),
-                color,
-                CROSS_THICKNESS,
-            )
-            cv.line(
-                img,
-                (int(point[0]), int(point[1]) - CROSS_SIZE),
-                (int(point[0]), int(point[1]) + CROSS_SIZE),
-                color,
-                CROSS_THICKNESS,
-            )
-    if next_points is not None:
-        for idx, point in enumerate(next_points):
-            # draw a "X sign" at the next points
-            color = CROSS_COLORS[idx]  # Alternate colors for next points
-            cv.line(
-                img,
-                (int(point[0]) - CROSS_SIZE, int(point[1]) - CROSS_SIZE),
-                (int(point[0]) + CROSS_SIZE, int(point[1]) + CROSS_SIZE),
-                color,
-                CROSS_THICKNESS,
-            )
-            cv.line(
-                img,
-                (int(point[0]) - CROSS_SIZE, int(point[1]) + CROSS_SIZE),
-                (int(point[0]) + CROSS_SIZE, int(point[1]) - CROSS_SIZE),
-                color,
-                CROSS_THICKNESS,
-            )
-    # plot the frame rectangle
-    frame_points = np.array(
-        [
-            frame[0],
-            [frame[1][0], frame[0][1]],
-            frame[1],
-            [frame[0][0], frame[1][1]],
-        ],
-        dtype=np.int32,
-    )
-    cv.polylines(
-        img,
-        [frame_points],
-        isClosed=True,
-        color=FRAME_COLOR,
-        thickness=FRAME_THICKNESS,
-    )
-    return img
-
-
-# -------------------------------------------------------------------------
 def _convert_img_points_to_video_dimensions(
     points: np.ndarray, frame: np.ndarray, video_dims: np.ndarray
 ) -> np.ndarray:
@@ -374,15 +314,14 @@ def _extract_video_frame_from_image(
 
 # -------------------------------------------------------------------------
 def _points_mean_size(points: np.ndarray) -> float:
-    # Calculate the mean size of a triangle formed by three points.
-    return np.mean(
-        [
-            np.linalg.norm(points[0] - points[1]),
-            np.linalg.norm(points[1] - points[2]),
-            np.linalg.norm(points[2] - points[0]),
-        ]
-    )
+    # Calculate the mean of the distances between all the points
+    num_points = len(points)
+    distances = []
+    for i in range(num_points):
+        for j in range(i + 1, num_points):
+            distances.append(np.linalg.norm(points[i] - points[j]))
 
+    return np.mean(distances)
 
 # -------------------------------------------------------------------------
 def _points_mean_size_ratio(points0: np.ndarray, points1: np.ndarray) -> float:
@@ -424,7 +363,7 @@ def _rotate_points(points, angle):
     return points @ rotation_matrix.T
 
 # -------------------------------------------------------------------------
-def _interpolate_points_by_decomposition(points0, points1, video_size, step, log_scale = True):
+def _interpolate_points_by_decomposition(points0: np.ndarray, points1: np.ndarray, video_size: np.ndarray, step: float, log_scale = True):
     #Split the transformation into scale, rotation, and translation components
     scale =    _points_mean_size_ratio(points0, points1)
     rotation = _points_mean_rotation(points0, points1)
@@ -449,34 +388,6 @@ def _interpolate_points_by_decomposition(points0, points1, video_size, step, log
     rotated_points0 = _rotate_points(zero_centered_points0 + step_residual, step_angle)
     rotated_zoomed_points0 = rotated_points0 * step_scale
     return rotated_zoomed_points0 + rot_center
-
-# -------------------------------------------------------------------------
-def deprecated_interpolate_points_linear(
-    points0: np.ndarray, points1: np.ndarray, alpha: float
-) -> np.ndarray:
-    # Interpolate between two sets of points linearly based on the alpha value.
-    return (1 - alpha) * points0 + alpha * points1
-
-
-# -------------------------------------------------------------------------
-def deprecated_interpolate_points_log(
-    points0: np.ndarray, points1: np.ndarray, alpha: float
-) -> np.ndarray:
-    # Interpolate between two sets of points based on the specified
-    # interpolation method.
-    # Calculate the relative size of the two sets of points
-    size_ratio = _points_mean_size_ratio(points0, points1)
-    log_size_ratio = np.log(size_ratio)
-    interpolated_log_size = alpha * log_size_ratio
-    linear_size_ratio = np.exp(interpolated_log_size)
-    pg_alpha = (
-        (linear_size_ratio - 1) / (size_ratio - 1)
-        if size_ratio != 1
-        else alpha
-    )
-    # print(f'DEBUG - size_ratio: {size_ratio}, alpha: {alpha}, '
-    #       f'linear_size_ratio: {linear_size_ratio}, pg_alpha: {pg_alpha}')
-    return (1 - pg_alpha) * points0 + pg_alpha * points1
 
 
 # -------------------------------------------------------------------------
@@ -632,10 +543,10 @@ def create_blended_frame(
         1 - size_alpha,
         interpolation_method=interpolation_method,
     )
-    correlation = _calculate_frames_correlation(
-        intermediate_frame0, intermediate_frame1
-    )
-    print(f"DEBUG - frames correlation: {correlation}")
+    #correlation = _calculate_frames_correlation(
+    #    intermediate_frame0, intermediate_frame1
+    #)
+    #print(f"DEBUG - frames correlation: {correlation}")
     # Blend the two intermediate frames
     blended_frame = cv.addWeighted(
         intermediate_frame0,
@@ -988,83 +899,3 @@ class VideoGenerator:
         return True, None
 
 
-# -------------------------------------------------------------------------
-if __name__ == "__main__":
-    proj_file = "seed.zmr"
-    proj_data = load_project(proj_file)
-    video_generator = VideoGenerator(proj_data, "seed.avi")
-    video_generator.generate_full_video()
-    quit()
-
-    proj_file = "prat.json"
-    proj_data = load_project(proj_file)
-    save_project("out.json", proj_data)
-
-    video_dims = np.array(proj_data["video_data"]["size"], dtype=np.int32)
-
-    # Extract the first images pair data from the configuration dictionary
-    img0 = proj_data["images_data"][0]["image"]
-    frame0 = np.array(proj_data["images_data"][0]["frame"], dtype=np.float32)
-    next_points0 = np.array(
-        proj_data["images_data"][0]["next_points"], dtype=np.float32
-    )
-
-    img1 = proj_data["images_data"][1]["image"]
-    frame1 = np.array(proj_data["images_data"][1]["frame"], dtype=np.float32)
-    prev_points1 = np.array(
-        proj_data["images_data"][1]["prev_points"], dtype=np.float32
-    )
-
-    min_blend_alpha, max_blend_alpha = get_blend_alpha_range(
-        video_dims,
-        img0.get_cv_image(),
-        next_points0,
-        frame0,
-        img1.get_cv_image(),
-        prev_points1,
-        frame1,
-    )
-    print(
-        f"DEBUG - blend_alpha_range = {min_blend_alpha} to {max_blend_alpha}"
-    )
-    for size_alpha in np.linspace(0, 1, num=NUM_FRAMES):
-        blend_alpha = (size_alpha - min_blend_alpha) / (
-            max_blend_alpha - min_blend_alpha
-        )
-        blend_alpha = np.clip(blend_alpha, 0.0, 1.0)
-        print(
-            f"DEBUG - size_alpha = {size_alpha}, blend_alpha = {blend_alpha}"
-        )
-        blended_frame = create_blended_frame(
-            proj_data, 0, size_alpha, blend_alpha
-        )
-
-        cv.imshow("Blended Frame", blended_frame)
-        cv.waitKey(1)
-
-    cv.waitKey(0)
-    cv.destroyAllWindows()
-    quit()
-
-    # Convert the second image's previous points to the video dimensions
-    # using an affine transformation
-    video_transformed_prev_points1 = _convert_img_points_to_video_dimensions(
-        prev_points1, frame1, video_dims
-    )
-
-    img0_frame_transformer = _AffineTransformer(
-        next_points0, video_transformed_prev_points1
-    )
-
-    video_frame0 = img0_frame_transformer.transform_image(
-        img0.get_cv_image(), video_dims
-    )
-    marked_video_frame0 = generate_image_with_markers(
-        video_frame0,
-        [[0, 0], video_frame0.shape[:2][::-1]],
-        None,
-        video_transformed_prev_points1,
-    )
-    cv.imshow("MarkedVideoFrame0", marked_video_frame0)
-    cv.waitKey(0)
-    cv.destroyAllWindows()
