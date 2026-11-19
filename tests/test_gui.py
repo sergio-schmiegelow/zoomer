@@ -5,8 +5,8 @@ from threading import Event
 
 import numpy as np
 import pytest
-from PyQt6.QtCore import Qt, QThread, QTimer
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtCore import QMimeData, QPoint, QPointF, Qt, QThread, QTimer, QUrl
+from PyQt6.QtGui import QDragEnterEvent, QPixmap, QWheelEvent
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
@@ -715,6 +715,7 @@ class TestVideoPreview:
         assert video.canvas._source_pixmap.isNull()
         assert not video.slider.isEnabled()
         assert not video.is_playing()
+        area.tabs.setCurrentWidget(video)
         QTest.qWait(300)
         assert not video.canvas._source_pixmap.isNull()
         assert video.slider.isEnabled()
@@ -758,6 +759,90 @@ class TestVideoPreview:
         assert not area._fusion_pixmap.isNull()
         QTest.qWait(300)
         assert area.video_preview.slider.isEnabled()
+
+
+class TestAutomaticPreviewSelection:
+    def test_organizer_input_shows_input_preview(self, window):
+        area = window.image_files_and_preview_area.preview_area
+        organizer = window.image_files_and_preview_area.image_files_organizer
+        area.tabs.setCurrentWidget(area.video_preview)
+        item = organizer.image_list.item(organizer.image_list.currentRow())
+        position = organizer.image_list.visualItemRect(item).center()
+        QTest.mouseClick(
+            organizer.image_list.viewport(),
+            Qt.MouseButton.LeftButton,
+            pos=position,
+        )
+        assert area.tabs.currentWidget() is area.input_image_label
+
+        area.tabs.setCurrentWidget(area.video_preview)
+        QTest.keyClick(organizer.image_list, Qt.Key.Key_Down)
+        assert area.tabs.currentWidget() is area.input_image_label
+
+    def test_fusion_editor_input_shows_fusion_preview(self, window):
+        area = window.image_files_and_preview_area.preview_area
+        editor = window.image_fusion_editor
+        area.tabs.setCurrentWidget(area.video_preview)
+        QTest.mouseClick(editor.next_button, Qt.MouseButton.LeftButton)
+        assert area.tabs.currentWidget() is area.fusion_image_label
+
+        area.tabs.setCurrentWidget(area.input_image_label)
+        canvas = editor.pair_splitter.widget(0).editor
+        QTest.mouseClick(canvas, Qt.MouseButton.LeftButton)
+        assert area.tabs.currentWidget() is area.fusion_image_label
+
+        area.tabs.setCurrentWidget(area.input_image_label)
+        position = QPointF(canvas.rect().center())
+        wheel = QWheelEvent(
+            position,
+            position,
+            QPoint(),
+            QPoint(0, 120),
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+            Qt.ScrollPhase.NoScrollPhase,
+            False,
+        )
+        QApplication.sendEvent(canvas, wheel)
+        assert area.tabs.currentWidget() is area.fusion_image_label
+
+    def test_dragging_files_into_organizer_shows_input_preview(self, window):
+        area = window.image_files_and_preview_area.preview_area
+        organizer = window.image_files_and_preview_area.image_files_organizer
+        area.tabs.setCurrentWidget(area.video_preview)
+        mime = QMimeData()
+        path = window.proj_image_entries[0]["image"].get_image_path()
+        mime.setUrls([QUrl.fromLocalFile(str(path))])
+        event = QDragEnterEvent(
+            QPoint(5, 5),
+            Qt.DropAction.CopyAction,
+            mime,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        QApplication.sendEvent(organizer.image_list.viewport(), event)
+        assert area.tabs.currentWidget() is area.input_image_label
+
+    def test_programmatic_updates_leave_preview_unchanged(self, window):
+        area = window.image_files_and_preview_area.preview_area
+        area.tabs.setCurrentWidget(area.video_preview)
+        window._show_pair(0)
+        window._refresh_video_preview()
+        QTest.mouseMove(window.image_fusion_editor.next_button)
+        assert area.tabs.currentWidget() is area.video_preview
+
+    def test_export_keeps_video_preview_selected(self, window):
+        area = window.image_files_and_preview_area.preview_area
+        area.tabs.setCurrentWidget(area.video_preview)
+        window._video_export_job = object()
+        try:
+            QTest.mouseClick(
+                window.image_fusion_editor.next_button,
+                Qt.MouseButton.LeftButton,
+            )
+            assert area.tabs.currentWidget() is area.video_preview
+        finally:
+            window._video_export_job = None
 
 
 class TestVideoExport:

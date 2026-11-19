@@ -8,7 +8,7 @@ from collections import deque
 from pathlib import Path
 from threading import Event
 
-from PyQt6.QtCore import Qt, QThread, QTimer
+from PyQt6.QtCore import QEvent, Qt, QThread, QTimer
 from PyQt6.QtGui import QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
     QSpinBox,
     QSplitter,
     QVBoxLayout,
+    QWidget,
     QWidgetAction,
 )
 
@@ -45,6 +46,18 @@ from .widgets import (
 HISTORY_LIMIT = 10
 CFG_FILENAME = "zoomer.cfg"
 AUTOSAVE_FILENAME = "autosave.zmr"
+PREVIEW_INTERACTION_EVENTS = frozenset(
+    (
+        QEvent.Type.MouseButtonPress,
+        QEvent.Type.MouseButtonDblClick,
+        QEvent.Type.KeyPress,
+        QEvent.Type.Wheel,
+        QEvent.Type.TabletPress,
+        QEvent.Type.TouchBegin,
+        QEvent.Type.DragEnter,
+        QEvent.Type.Drop,
+    )
+)
 
 
 class _ProjectLoadJob(QThread):
@@ -203,6 +216,29 @@ class MainApp(QMainWindow):
         self._create_menus()
         self._update_window_title()
         self._save_cfg()
+        QApplication.instance().installEventFilter(self)
+
+    def eventFilter(self, watched, event):
+        if (
+            event.type() in PREVIEW_INTERACTION_EVENTS
+            and isinstance(watched, QWidget)
+            and self._video_export_job is None
+            and hasattr(self, "image_files_and_preview_area")
+        ):
+            area = self.image_files_and_preview_area
+            organizer = area.image_files_organizer
+            editor = getattr(self, "image_fusion_editor", None)
+            if watched is organizer or organizer.isAncestorOf(watched):
+                area.preview_area.tabs.setCurrentWidget(
+                    area.preview_area.input_image_label
+                )
+            elif editor is not None and (
+                watched is editor or editor.isAncestorOf(watched)
+            ):
+                area.preview_area.tabs.setCurrentWidget(
+                    area.preview_area.fusion_image_label
+                )
+        return super().eventFilter(watched, event)
 
     def _create_menus(self):
         file_menu = self.menuBar().addMenu("&File")

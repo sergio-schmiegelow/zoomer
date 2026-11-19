@@ -53,8 +53,10 @@ The window title shows the current project name.
 4. **Check the result.** The preview tabs show the selected image, the fusion
    of the current pair, and the whole **Video preview** with play, pause,
    start/end and single-frame controls. Playback never exceeds the project
-   frame rate. A calculation problem, such as markers that make the zoom
-   shrink between images, is reported on the preview canvas.
+   frame rate. Using the image list selects **Input image**, while using the
+   fusion editor selects **Fusion preview**. A calculation problem, such as
+   markers that make the zoom shrink between images, is reported on the
+   preview canvas.
    Removing images updates the previews; fusion and video are unavailable
    when fewer than two images remain.
 
