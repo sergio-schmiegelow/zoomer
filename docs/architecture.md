@@ -74,6 +74,10 @@ At startup, an existing recovery file is offered to the user before the last
 named project is auto-opened. A recovered project has no active named path;
 Save routes to Save As until the user chooses one.
 
+Opening, auto-opening and recovering projects use `_ProjectLoadJob` to load
+the project and images off the GUI thread. A modal loading banner uses the
+same animated spinner as alignment until the worker finishes.
+
 ### History
 
 `_record_history()` pushes a snapshot onto a 10-entry deque before each edit

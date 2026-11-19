@@ -1,10 +1,11 @@
 import json
 import time
 from pathlib import Path
+from threading import Event
 
 import numpy as np
 import pytest
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QThread, QTimer
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
@@ -98,6 +99,71 @@ class TestProjects:
         assert len(window.proj_image_entries) == 3
         cfg = json.loads((tmp_path / "zoomer.cfg").read_text())
         assert cfg["last_project"] == str(other.resolve())
+
+    def test_loading_banner_animates_until_project_is_loaded(
+        self, window, tmp_path, proj_file, monkeypatch
+    ):
+        monkeypatch.setattr(
+            QFileDialog,
+            "getOpenFileName",
+            staticmethod(lambda *args, **kwargs: (str(proj_file), "")),
+        )
+        finished_loading = Event()
+        observed = {}
+
+        def slow_load(filename):
+            observed["worker_thread"] = (
+                QThread.currentThread() != QApplication.instance().thread()
+            )
+            if not finished_loading.wait(3):
+                raise TimeoutError("Loading was not released")
+            return load_project(filename)
+
+        def observe_banner():
+            dialog = QApplication.activeModalWidget()
+            observed["visible"] = dialog.isVisible()
+            observed["label"] = dialog.findChild(gui.QLabel).text()
+            observed["spinner_running"] = dialog.spinner._timer.isActive()
+            observed["angle"] = dialog.spinner._angle
+            dialog.reject()
+            observed["reject_kept_visible"] = dialog.isVisible()
+            finished_loading.set()
+
+        monkeypatch.setattr(gui, "load_project", slow_load)
+        QTimer.singleShot(180, observe_banner)
+        window.open_project()
+        assert observed == {
+            "worker_thread": True,
+            "visible": True,
+            "label": "Loading project",
+            "spinner_running": True,
+            "angle": observed["angle"],
+            "reject_kept_visible": True,
+        }
+        assert observed["angle"] != 0
+        assert QApplication.activeModalWidget() is None
+        assert window.proj_filename == str(proj_file)
+
+    def test_loading_failure_closes_banner_and_keeps_project(
+        self, window, monkeypatch, no_dialogs
+    ):
+        previous_data = window.proj_data.copy()
+        previous_filename = window.proj_filename
+        monkeypatch.setattr(
+            QFileDialog,
+            "getOpenFileName",
+            staticmethod(lambda *args, **kwargs: ("missing.zmr", "")),
+        )
+
+        def fail_load(_filename):
+            raise ValueError("load failed")
+
+        monkeypatch.setattr(gui, "load_project", fail_load)
+        window.open_project()
+        assert QApplication.activeModalWidget() is None
+        assert window.proj_data == previous_data
+        assert window.proj_filename == previous_filename
+        assert "load failed" in no_dialogs[-1][-1]
 
     def test_save_as_forces_zmr_suffix(self, window, tmp_path, monkeypatch):
         monkeypatch.setattr(
@@ -224,6 +290,57 @@ class TestCfgOptions:
 
 
 class TestMain:
+    @pytest.mark.parametrize("recover", [False, True])
+    def test_startup_loading_shows_animated_banner(
+        self, qapp, tmp_path, proj_file, monkeypatch, recover
+    ):
+        cfg_path = tmp_path / "zoomer.cfg"
+        recovery_path = tmp_path / gui.AUTOSAVE_FILENAME
+        if recover:
+            cfg_path.write_text("{}")
+            recovery_path.write_text(proj_file.read_text())
+            monkeypatch.setattr(
+                QMessageBox,
+                "question",
+                staticmethod(
+                    lambda *args, **kwargs: QMessageBox.StandardButton.Yes
+                ),
+            )
+        else:
+            cfg_path.write_text(
+                json.dumps(
+                    {
+                        "auto_open_last_project": True,
+                        "last_project": str(proj_file),
+                    }
+                )
+            )
+
+        finished_loading = Event()
+        observed = {}
+
+        def slow_load(filename):
+            if not finished_loading.wait(3):
+                raise TimeoutError("Loading was not released")
+            return load_project(filename)
+
+        def observe_banner():
+            dialog = QApplication.activeModalWidget()
+            observed["visible"] = dialog.isVisible()
+            observed["parent_visible"] = dialog.parentWidget().isVisible()
+            observed["label"] = dialog.findChild(gui.QLabel).text()
+            observed["angle"] = dialog.spinner._angle
+            finished_loading.set()
+
+        monkeypatch.setattr(gui, "load_project", slow_load)
+        monkeypatch.setattr(QApplication, "exec", lambda _app: 0)
+        QTimer.singleShot(180, observe_banner)
+        assert gui.main(["--config", str(cfg_path)]) == 0
+        assert observed["visible"] and observed["parent_visible"]
+        assert observed["label"] == "Loading project"
+        assert observed["angle"] != 0
+        assert QApplication.activeModalWidget() is None
+
     def test_skips_recovery_prompt_when_autosave_matches_named_project(
         self, qapp, tmp_path, proj_file, monkeypatch
     ):

@@ -12,11 +12,16 @@ from PyQt6.QtCore import Qt, QThread, QTimer
 from PyQt6.QtGui import QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
+    QDialog,
     QFileDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
     QMainWindow,
     QMessageBox,
     QSpinBox,
     QSplitter,
+    QVBoxLayout,
     QWidgetAction,
 )
 
@@ -34,11 +39,54 @@ from .widgets import (
     ImageFusionEditionArea,
     NewProjectDialog,
     VideoSettingsDialog,
+    _BusySpinner,
 )
 
 HISTORY_LIMIT = 10
 CFG_FILENAME = "zoomer.cfg"
 AUTOSAVE_FILENAME = "autosave.zmr"
+
+
+class _ProjectLoadJob(QThread):
+    def __init__(self, filename, parent=None):
+        super().__init__(parent)
+        self.filename = filename
+        self.project = None
+        self.error = None
+
+    def run(self):
+        try:
+            self.project = load_project(self.filename)
+        except Exception as error:
+            self.error = error
+
+
+class _ProjectLoadingDialog(QDialog):
+    def __init__(self, parent):
+        super().__init__(
+            parent, Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint
+        )
+        self.setModal(True)
+        layout = QVBoxLayout(self)
+        banner = QFrame(self)
+        banner.setObjectName("loadingBanner")
+        banner.setStyleSheet(
+            "QFrame#loadingBanner { background-color: #3a3320;"
+            " border: 1px solid #c9a227; border-radius: 4px; }"
+            " QFrame#loadingBanner QLabel { color: #ffe9a6; }"
+        )
+        banner_layout = QHBoxLayout(banner)
+        banner_layout.setContentsMargins(8, 4, 8, 4)
+        self.spinner = _BusySpinner(banner)
+        banner_layout.addWidget(self.spinner)
+        banner_layout.addWidget(QLabel("Loading project"))
+        layout.addWidget(banner)
+
+    def reject(self):
+        pass
+
+    def closeEvent(self, event):
+        event.ignore()
 
 
 class _AlignmentJob(QThread):
@@ -279,7 +327,7 @@ class MainApp(QMainWindow):
             )
             return
         try:
-            proj_loaded = load_project(filename)
+            proj_loaded = self._load_project_with_progress(filename)
         except Exception as error:
             print(error)
             QMessageBox.warning(
@@ -298,6 +346,21 @@ class MainApp(QMainWindow):
         self._set_project_modified(False)
         if self._normalize_boundary_points():
             self.save_autosave(mark_modified=False)
+
+    def _load_project_with_progress(self, filename):
+        dialog = _ProjectLoadingDialog(self)
+        job = _ProjectLoadJob(filename, dialog)
+        job.finished.connect(dialog.accept)
+        dialog.spinner.start()
+        job.start()
+        try:
+            dialog.exec()
+        finally:
+            job.wait()
+            dialog.spinner.stop()
+        if job.error is not None:
+            raise job.error
+        return job.project
 
     def save_project(self, _checked=False):
         if not self.proj_filename:
@@ -1050,6 +1113,8 @@ def main(argv=None) -> int:
     except (OSError, json.JSONDecodeError):
         cfg_data = dict(CFG_DEFAULTS)
     window = MainApp(cfg_data=cfg_data, cfg_path=cfg_path)
+    window.resize(1000, 700)
+    window.show()
     recovery_path = window.recovery_path
     cfg_last_project = cfg_data.get("last_project", "")
     last_project_path = Path(cfg_last_project) if cfg_last_project else None
@@ -1080,15 +1145,15 @@ def main(argv=None) -> int:
         if recover == QMessageBox.StandardButton.Yes:
             try:
                 window.set_image_workspace([], cfg_path.parent)
-                recovered_data = load_project(str(recovery_path))
+                recovered_data = window._load_project_with_progress(
+                    str(recovery_path)
+                )
                 recovered_data.setdefault("project_name", recovery_path.stem)
                 window.proj_filename = None
                 window.proj_directory = recovery_path.parent
                 window._apply_restored_config(recovered_data)
                 window._set_project_modified(True)
                 window._update_window_title()
-                window.resize(1000, 700)
-                window.show()
                 return app.exec()
             except (
                 OSError,
@@ -1111,7 +1176,7 @@ def main(argv=None) -> int:
     ):
         window.proj_filename = cfg_last_project
         try:
-            proj_loaded = load_project(cfg_last_project)
+            proj_loaded = window._load_project_with_progress(cfg_last_project)
             proj_loaded.setdefault("project_name", Path(cfg_last_project).stem)
             window.proj_directory = Path(cfg_last_project).resolve().parent
             window._apply_restored_config(proj_loaded)
@@ -1127,8 +1192,6 @@ def main(argv=None) -> int:
             QTimer.singleShot(0, window.new_project)
     else:
         QTimer.singleShot(0, window.new_project)
-    window.resize(1000, 700)
-    window.show()
     return app.exec()
 
 

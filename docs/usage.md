@@ -9,6 +9,8 @@ zoomer [--config PATH]
 `--config` selects the application preferences file (default `./zoomer.cfg`).
 On start Zoomer opens the last project when **Options > Auto open last
 project** is enabled; otherwise the **New project** dialog is shown.
+Opening or recovering a project shows an animated **Loading project** banner
+until its project file and images have loaded.
 
 The window title shows the current project name.
 
