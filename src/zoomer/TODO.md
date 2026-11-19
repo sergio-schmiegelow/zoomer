@@ -24,5 +24,4 @@
 * Option to auto fix rotation between images
 * Zoom auto
 * Temporarily remove the "logarithm" option in the movie menu (until implement the alternatives)
-* Auto swith the preview mode when operating the tools
 * Option to invert the full sequence of images

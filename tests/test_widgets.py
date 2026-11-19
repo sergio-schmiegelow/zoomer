@@ -1,6 +1,13 @@
 import pytest
 from PyQt6.QtCore import QEvent, QPoint, QPointF, Qt
-from PyQt6.QtGui import QColor, QImage, QKeyEvent, QMouseEvent, QWheelEvent
+from PyQt6.QtGui import (
+    QColor,
+    QImage,
+    QKeyEvent,
+    QMouseEvent,
+    QPainterPath,
+    QWheelEvent,
+)
 from PyQt6.QtTest import QTest
 
 from conftest import write_images
@@ -196,6 +203,89 @@ class TestImageMarkersEditor:
         )
         assert rendered.pixelColor(center_x + 10, center_y) == QColor("white")
         editor.close()
+
+    def test_alignment_markers_have_numbered_outlined_labels(
+        self, qapp, tmp_path, monkeypatch
+    ):
+        image_path = tmp_path / "gray.png"
+        image = QImage(120, 120, QImage.Format.Format_RGB32)
+        image.fill(QColor("#808080"))
+        image.save(str(image_path))
+        editor = widgets.ImageMarkersEditor(
+            str(image_path),
+            (0, 0),
+            120,
+            1.0,
+            [(30, 30), (90, 30), (60, 90)],
+        )
+        editor.resize(480, 360)
+        editor.cfg_frame_crosshair_enabled = False
+        editor.show()
+        qapp.processEvents()
+        editor._marker_animation_timer.stop()
+        labels = []
+
+        class RecordingPath(QPainterPath):
+            def addText(self, *args):  # noqa: N802
+                labels.append(args[-1])
+                super().addText(*args)
+
+        monkeypatch.setattr(widgets, "QPainterPath", RecordingPath)
+        rendered = editor.grab().toImage()
+        assert labels == ["1", "2", "3"]
+        for point in editor.points:
+            position = editor.image_to_widget(point)
+            center_x = round(position.x())
+            center_y = round(position.y())
+            pixels = [
+                rendered.pixelColor(x, y)
+                for x in range(center_x + 17, center_x + 37)
+                for y in range(center_y - 10, center_y + 11)
+            ]
+            assert QColor("white") in pixels
+            assert QColor("black") in pixels
+
+        editor.set_points([(40, 50), (90, 30), (60, 90)])
+        labels.clear()
+        moved = editor.grab().toImage()
+        assert labels == ["1", "2", "3"]
+        new_position = editor.image_to_widget(editor.points[0])
+        center_x = round(new_position.x())
+        center_y = round(new_position.y())
+        assert any(
+            moved.pixelColor(x, y) == QColor("white")
+            for x in range(center_x + 17, center_x + 37)
+            for y in range(center_y - 10, center_y + 11)
+        )
+        editor.close()
+
+    def test_marker_labels_stay_inside_canvas_at_edges(
+        self, editor, monkeypatch
+    ):
+        editor.set_marker_thickness(10)
+        positions = [
+            QPointF(editor.width() - 3, 3),
+            QPointF(editor.width() - 3, editor.height() - 3),
+            QPointF(100, 100),
+        ]
+        points = [editor.widget_to_image(position) for position in positions]
+        editor.set_points([(point.x(), point.y()) for point in points])
+        editor._marker_animation_timer.stop()
+        bounds = []
+
+        class RecordingPath(QPainterPath):
+            def translate(self, *args):
+                super().translate(*args)
+                bounds.append(self.boundingRect())
+
+        monkeypatch.setattr(widgets, "QPainterPath", RecordingPath)
+        editor.grab()
+        assert len(bounds) == 3
+        assert bounds[0].right() < positions[0].x()
+        assert bounds[1].right() < positions[1].x()
+        for label in bounds:
+            assert 0 < label.left() < label.right() < editor.width()
+            assert 0 < label.top() < label.bottom() < editor.height()
 
 
 class TestSliders:

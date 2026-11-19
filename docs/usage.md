@@ -37,9 +37,9 @@ The window title shows the current project name.
    video aspect ratio and a random starting triangle of markers.
 2. **Edit a pair.** The bottom area edits two consecutive images; their
    names are bold in the list. Use *Previous pair* / *Next pair* to move.
-   - Drag the markers (red, green, blue) onto the same three features in
-     both images. The left editor edits `next_points`, the right one
-     `prev_points`.
+   - Drag the numbered markers (1 red, 2 green, 3 blue) onto the same three
+     features in both images. The left editor edits `next_points`, the right
+     one `prev_points`.
    - Drag the frame by its edges to move it; drag the corners to resize it
      while keeping the video aspect ratio.
    - Mouse wheel zooms, dragging empty space pans. The buttons next to each

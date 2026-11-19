@@ -12,10 +12,12 @@ from PyQt6.QtCore import (
 )
 from PyQt6.QtGui import (
     QColor,
+    QFont,
     QIcon,
     QImage,
     QImageReader,
     QPainter,
+    QPainterPath,
     QPen,
     QPixmap,
 )
@@ -1885,6 +1887,34 @@ class ImageMarkersEditor(QWidget):
                     QPointF(position.x(), position.y() - half_size),
                     QPointF(position.x(), position.y() + half_size),
                 )
+
+        font = QFont(self.font())
+        font.setPixelSize(16)
+        font.setBold(True)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        outline = QPen(QColor("black"), 3, join=Qt.PenJoinStyle.RoundJoin)
+        marker_radius = (CROSS_SIZE - 4) / 2 + 2.5 * self.cfg_marker_thickness
+        for index, point in enumerate(self.points, start=1):
+            position = self.image_to_widget(point)
+            path = QPainterPath()
+            path.addText(QPointF(0, 0), font, str(index))
+            bounds = path.boundingRect()
+            x = position.x() + marker_radius + 4 - bounds.left()
+            if x + bounds.right() + 2 > self.width():
+                x = position.x() - marker_radius - 4 - bounds.right()
+            y = position.y() - bounds.center().y()
+            if 0 <= position.y() <= self.height():
+                y = max(
+                    2 - bounds.top(),
+                    min(y, self.height() - 2 - bounds.bottom()),
+                )
+            path.translate(x, y)
+            painter.setPen(outline)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawPath(path)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor("white"))
+            painter.drawPath(path)
         _event.accept()
 
     def _frame_handle_at(self, position):
