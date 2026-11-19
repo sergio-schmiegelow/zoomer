@@ -55,8 +55,8 @@ The window title shows the current project name.
    start/end and single-frame controls. Playback never exceeds the project
    frame rate. Using the image list selects **Input image**, while using the
    fusion editor selects **Fusion preview**. A calculation problem, such as
-   markers that make the zoom shrink between images, is reported on the
-   preview canvas.
+   markers that make the zoom change direction between images, is reported
+   on the preview canvas.
    Removing images updates the previews; fusion and video are unavailable
    when fewer than two images remain.
 

@@ -826,9 +826,9 @@ def _calculate_zoom_array(proj_data: dict) -> tuple:
         img_zooms.append(current_zoom)
         print(f"DEBUG - Pair ratio for images {i} and {i + 1}: {pair_ratio}")
         print(f"Zoom for image {i}:{current_zoom}")
-    # if img_zooms is not an increase sequence, return error
-    if not np.all(np.diff(img_zooms) >= 0):
-        error_msg = "Image zooms are not in increasing order"
+    # if img_zooms is not an full increasing or decreasing sequence, return error
+    if not (np.all(np.diff(img_zooms) >= 0) or np.all(np.diff(img_zooms) <= 0)):
+        error_msg = "Image zooms are not in full increasing or decreasing order"
         print(f"ERROR - {error_msg}")
         return None, error_msg
     img_zooms = np.array(img_zooms)
@@ -852,19 +852,19 @@ def _calculate_frames_fusion_and_size_alpha(proj_data: dict):
     if error_msg is not None:
         return None, error_msg
     log_zoom_array = np.log(zoom_array)
-    frames_logs_zooms = np.linspace(0, log_zoom_array[-1], num=total_frames)
-    print("DEBUG - Frames logs zooms:", frames_logs_zooms)
+    zoom_distances = np.abs(log_zoom_array - log_zoom_array[0])
+    frame_distances = np.linspace(0, zoom_distances[-1], num=total_frames)
+    print("DEBUG - Frames log zoom distances:", frame_distances)
     indexes_steps_list = []
-    for frame_log_zoom in frames_logs_zooms:
-        if frame_log_zoom <= log_zoom_array[0]:
+    for frame_distance in frame_distances:
+        if frame_distance <= zoom_distances[0]:
             indexes_steps_list.append((0, 0.0))
             continue
-        # Find the index of the log_zoom_array less or equal to frame_log_zoom
         first_index = (
-            np.searchsorted(log_zoom_array, frame_log_zoom, side="left") - 1
+            np.searchsorted(zoom_distances, frame_distance, side="left") - 1
         )
-        step = (frame_log_zoom - log_zoom_array[first_index]) / (
-            log_zoom_array[first_index + 1] - log_zoom_array[first_index]
+        step = (frame_distance - zoom_distances[first_index]) / (
+            zoom_distances[first_index + 1] - zoom_distances[first_index]
         )
         indexes_steps_list.append((first_index, step))
     before_frames = int(fps * pause_before)

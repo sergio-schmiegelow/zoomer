@@ -241,8 +241,89 @@ class TestVideoGenerator:
         assert generator.generate_video_frame_on_position(-1) is None
         assert generator.generate_video_frame_on_position(99) is None
 
-    def test_decreasing_zoom_is_an_error(self, tmp_path):
+    def test_decreasing_zoom_traverses_pairs_in_order(self, tmp_path):
         proj = make_proj_data(tmp_path, growth=0.5)
+        proj["video_data"]["FPS"] = 5
+        generator = backend.VideoGenerator(proj, "")
+        assert generator.perform_video_calculations() == (True, None)
+        assert generator.get_total_frames() == 5
+        frames = generator._indexes_size_alphas_list
+        assert [index for index, _alpha in frames] == [0, 0, 0, 1, 1]
+        assert [alpha for _index, alpha in frames] == pytest.approx(
+            [0, 0.5, 1, 0.5, 1]
+        )
+        for position in range(5):
+            frame = generator.generate_video_frame_on_position(position)
+            assert frame.shape[:2] == IMAGE_SIZE[::-1]
+
+    @pytest.mark.parametrize(("growth", "last_size"), [(2, 40), (0.5, 2.5)])
+    def test_unequal_zoom_pairs_keep_constant_log_speed(
+        self, tmp_path, growth, last_size
+    ):
+        proj = make_proj_data(tmp_path, growth=growth)
+        proj["images_data"][2]["prev_points"] = triangle(last_size)
+        proj["video_data"]["FPS"] = 7
+        zooms, error = backend._calculate_zoom_array(proj)
+        assert error is None
+        generator = backend.VideoGenerator(proj, "")
+        assert generator.perform_video_calculations() == (True, None)
+        frames = generator._indexes_size_alphas_list
+        assert frames[0] == (0, 0)
+        assert frames[-1][0] == 1
+        assert frames[-1][1] == pytest.approx(1)
+        assert all(0 <= alpha <= 1 for _index, alpha in frames)
+        log_zooms = np.log(zooms)
+        actual = [
+            (1 - alpha) * log_zooms[index] + alpha * log_zooms[index + 1]
+            for index, alpha in frames
+        ]
+        assert actual == pytest.approx(np.linspace(0, log_zooms[-1], 7))
+
+    def test_decreasing_zoom_with_equal_initial_pair(self, tmp_path):
+        proj = make_proj_data(tmp_path, growth=0.5)
+        proj["images_data"][1]["prev_points"] = triangle(10)
+        generator = backend.VideoGenerator(proj, "")
+        assert generator.perform_video_calculations() == (True, None)
+        frames = generator._indexes_size_alphas_list
+        assert frames[0] == (0, 0)
+        assert frames[-1][0] == 1
+        assert frames[-1][1] == pytest.approx(1)
+        assert all(np.isfinite(alpha) for _index, alpha in frames)
+
+    def test_decreasing_zoom_exports_distinct_first_and_last_frames(
+        self, tmp_path
+    ):
+        proj = make_proj_data(tmp_path, count=2, growth=0.5)
+        proj["video_data"]["FPS"] = 5
+        target = tmp_path / "zoom-out.avi"
+        generator = backend.VideoGenerator(proj, str(target))
+        assert generator.generate_full_video() == (True, None)
+        video = cv.VideoCapture(str(target))
+        assert video.isOpened()
+        frames = []
+        while True:
+            success, frame = video.read()
+            if not success:
+                break
+            frames.append(frame)
+        video.release()
+        assert len(frames) == 5
+        assert np.mean(cv.absdiff(frames[0], frames[-1])) > 5
+
+    def test_decreasing_zoom_pause_frames_hold_endpoints(self, tmp_path):
+        proj = make_proj_data(tmp_path, count=2, growth=0.5)
+        proj["video_data"].update(FPS=4, pause_before=0.5, pause_after=0.5)
+        generator = backend.VideoGenerator(proj, "")
+        assert generator.perform_video_calculations() == (True, None)
+        frames = generator._indexes_size_alphas_list
+        assert [index for index, _alpha in frames] == [0] * 8
+        assert [alpha for _index, alpha in frames] == pytest.approx(
+            [0, 0, 0, 1 / 3, 2 / 3, 1, 1, 1]
+        )
+
+    def test_zoom_that_changes_direction_is_an_error(self, tmp_path):
+        proj = make_proj_data(tmp_path, growth=0.5)
+        proj["images_data"][2]["prev_points"] = triangle(20)
         generator = backend.VideoGenerator(proj, "")
         success, error = generator.perform_video_calculations()
         assert not success

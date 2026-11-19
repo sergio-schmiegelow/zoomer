@@ -27,9 +27,10 @@ interpolation, zoom computation) are internal.
 
 Zoom chain: for each pair the zoom ratio is the mean triangle side of the
 second image's `prev_points` divided by that of the first image's
-`next_points`, both mapped to video coordinates. The ratios must be
-non-decreasing; otherwise `perform_video_calculations()` returns an error
-message. Frames are linearly spaced in `log(zoom)`.
+`next_points`, both mapped to video coordinates. The cumulative zoom must be
+consistently non-decreasing or non-increasing; otherwise
+`perform_video_calculations()` returns an error message. Frames are linearly
+spaced in `log(zoom)` for either direction.
 
 ## widgets
 

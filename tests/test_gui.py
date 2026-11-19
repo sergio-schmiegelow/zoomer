@@ -683,6 +683,21 @@ class TestVideoPreview:
         assert "increasing" in preview.canvas.text()
         assert not preview.slider.isEnabled()
 
+    def test_decreasing_zoom_is_available_in_preview(self, window):
+        window._image_edited(1, "prev_points", triangle(5))
+        window._image_edited(2, "prev_points", triangle(5))
+        area = window.image_files_and_preview_area.preview_area
+        area.tabs.setCurrentWidget(area.video_preview)
+        window._refresh_video_preview()
+        preview = area.video_preview
+        assert preview.slider.isEnabled()
+        preview.end_button.click()
+        assert preview.slider.value() == preview.slider.maximum()
+        assert not preview.canvas._source_pixmap.isNull()
+        index, alpha = window._video_generator._indexes_size_alphas_list[-1]
+        assert index == 1
+        assert alpha == pytest.approx(1)
+
     def test_fewer_than_two_images_shows_a_hint(self, qapp, tmp_path):
         main = gui.MainApp(
             None, tmp_path / "empty.zmr", {}, tmp_path / "zoomer.cfg"

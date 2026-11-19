@@ -20,8 +20,6 @@
   * Uses homographic transform instead of affine
 * N (>4) alingnment points
   * Uses Delaunay Triangulation and & Voronoi Diagram (https://learnopencv.com/delaunay-triangulation-and-voronoi-diagram-using-opencv-c-python/)
-* Put numbers with the alignment markers
 * Option to auto fix rotation between images
-* Zoom auto
-* Temporarily remove the "logarithm" option in the movie menu (until implement the alternatives)
+* Zoom out
 * Option to invert the full sequence of images
