@@ -798,6 +798,8 @@ class MainApp(QMainWindow):
             self._path_for_entry(entry).resolve(): entry
             for entry in self.proj_image_entries
         }
+        remaining_paths = {Path(filename).resolve() for filename in filenames}
+        removed = any(path not in remaining_paths for path in entries_by_path)
         updated_entries = []
         for filename in filenames:
             path = Path(filename).resolve()
@@ -816,6 +818,15 @@ class MainApp(QMainWindow):
         self.proj_image_entries = updated_entries
         self.proj_data["images_data"] = updated_entries
         self._normalize_boundary_points()
+        if removed:
+            message = (
+                "Updating video preview"
+                if len(updated_entries) >= 2
+                else "Add at least two images to preview the video"
+            )
+            self.image_files_and_preview_area.preview_area.set_video_error(
+                message
+            )
         self.save_autosave(mark_modified=not unchanged)
         organizer = self.image_files_and_preview_area.image_files_organizer
         current_row = organizer.image_list.currentRow()
@@ -1015,12 +1026,13 @@ class MainApp(QMainWindow):
         organizer = self.image_files_and_preview_area.image_files_organizer
         pair_index = max(0, min(pair_index, max(0, len(paths) - 2)))
         if paths:
-            selected_index = min(pair_index, len(paths) - 1)
+            selected_index = min(
+                max(0, organizer.image_list.currentRow()), len(paths) - 1
+            )
             self.image_files_and_preview_area.preview_area.set_image(
                 self.proj_image_entries[selected_index]["image"]
             )
         else:
-            selected_index = 0
             self.image_files_and_preview_area.preview_area.set_image("")
         organizer.set_highlighted_paths(
             paths[pair_index : pair_index + 2] if len(paths) > 1 else []
@@ -1028,6 +1040,10 @@ class MainApp(QMainWindow):
         self.image_fusion_editor.set_pair(
             self.proj_image_entries, paths, pair_index
         )
+        if len(paths) < 2:
+            self.image_files_and_preview_area.preview_area.set_fusion_frame(
+                None
+            )
 
     def _navigate_pair(self, pair_index):
         organizer = self.image_files_and_preview_area.image_files_organizer

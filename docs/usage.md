@@ -55,6 +55,8 @@ The window title shows the current project name.
    start/end and single-frame controls. Playback never exceeds the project
    frame rate. A calculation problem, such as markers that make the zoom
    shrink between images, is reported on the preview canvas.
+   Removing images updates the previews; fusion and video are unavailable
+   when fewer than two images remain.
 
 Every change is written to `autosave.zmr` immediately for crash recovery.
 Use **File > Save project** or `Ctrl+S` to write the changes to the named

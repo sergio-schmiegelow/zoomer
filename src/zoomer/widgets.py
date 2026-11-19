@@ -773,7 +773,7 @@ class VideoPreviewWidget(QWidget):
 class PreviewArea(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setObjectName("previewArea")
+        self.setObjectName("previewTabsArea")
         self.tabs = QTabWidget(self)
         self.input_image_label = _FitImageLabel("Select an image to preview")
         self.fusion_image_label = _FitImageLabel("Fusion preview unavailable")
@@ -805,24 +805,26 @@ class PreviewArea(QWidget):
         image = load_oriented_image(image_object) if has_image else QImage()
         if image.isNull():
             self._input_pixmap = QPixmap()
+        else:
+            self._input_pixmap = QPixmap.fromImage(image)
+        self.input_image_label.set_source_pixmap(self._input_pixmap)
+        if image.isNull():
             self.input_image_label.setText(
                 "Select an image to preview"
                 if not has_image
                 else "Unable to load image"
             )
-        else:
-            self._input_pixmap = QPixmap.fromImage(image)
-        self.input_image_label.set_source_pixmap(self._input_pixmap)
         self._update_previews()
 
     def set_fusion_frame(self, image):
         if image is None or not hasattr(image, "shape"):
             self._fusion_pixmap = QPixmap()
-            self.fusion_image_label.setText("Fusion preview unavailable")
         else:
             qt_image = _array_to_qimage(image)
             self._fusion_pixmap = QPixmap.fromImage(qt_image)
         self.fusion_image_label.set_source_pixmap(self._fusion_pixmap)
+        if self._fusion_pixmap.isNull():
+            self.fusion_image_label.setText("Fusion preview unavailable")
         self._update_previews()
 
     def set_fusion_error(self, message):
@@ -1013,7 +1015,7 @@ class AlphaRangeSlider(QWidget):
 class ImageFilesAndPreviewArea(QSplitter):
     def __init__(self, parent=None):
         super().__init__(Qt.Orientation.Horizontal, parent)
-        self.setObjectName("imageFilesAndPreviewArea")
+        self.setObjectName("previewArea")
         self.image_files_organizer = ImageFilesOrganizer(self)
         self.preview_area = PreviewArea(self)
         self.addWidget(self.image_files_organizer)

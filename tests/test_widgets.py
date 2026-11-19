@@ -261,6 +261,15 @@ class TestImageFilesOrganizer:
         assert bold == [True, True, False]
 
 
+def test_preview_area_object_names_identify_distinct_widgets(qapp):
+    area = widgets.ImageFilesAndPreviewArea()
+    assert area.objectName() == "previewArea"
+    assert area.preview_area.objectName() == "previewTabsArea"
+    assert area.findChild(widgets.PreviewArea, "previewTabsArea") is (
+        area.preview_area
+    )
+
+
 class TestVideoPreviewWidget:
     @pytest.fixture
     def preview(self, qapp):

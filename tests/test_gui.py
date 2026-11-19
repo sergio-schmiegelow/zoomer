@@ -5,12 +5,13 @@ from threading import Event
 
 import numpy as np
 import pytest
-from PyQt6.QtCore import QThread, QTimer
+from PyQt6.QtCore import Qt, QThread, QTimer
+from PyQt6.QtGui import QPixmap
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from conftest import triangle
-from zoomer import gui
+from zoomer import gui, widgets
 from zoomer.backend import (
     ImageClass,
     get_supported_video_formats,
@@ -689,6 +690,74 @@ class TestVideoPreview:
         main.set_image_workspace([], tmp_path)
         main._refresh_video_preview()
         assert "two images" in self.preview(main).canvas.text()
+
+    def test_removing_images_updates_or_clears_all_previews(self, window):
+        area = window.image_files_and_preview_area.preview_area
+        organizer = window.image_files_and_preview_area.image_files_organizer
+        video = area.video_preview
+        area.tabs.setCurrentWidget(video)
+        window._refresh_video_preview()
+        assert not video.canvas._source_pixmap.isNull()
+        assert not area._fusion_pixmap.isNull()
+        video.play()
+        assert video.is_playing()
+
+        organizer.image_list.setCurrentRow(1)
+        previous_fusion = area._fusion_pixmap.toImage()
+        QTest.keyClick(organizer.image_list, Qt.Key.Key_Delete)
+        assert len(window.proj_image_entries) == 2
+        assert organizer.image_list.currentRow() == 1
+        selected_image = window.proj_image_entries[1]["image"]
+        expected = QPixmap.fromImage(selected_image.get_qt_image()).toImage()
+        assert area._input_pixmap.toImage() == expected
+        assert not area._fusion_pixmap.isNull()
+        assert area._fusion_pixmap.toImage() != previous_fusion
+        assert video.canvas._source_pixmap.isNull()
+        assert not video.slider.isEnabled()
+        assert not video.is_playing()
+        QTest.qWait(300)
+        assert not video.canvas._source_pixmap.isNull()
+        assert video.slider.isEnabled()
+        generator = window._video_generator
+        expected_frame = generator.generate_video_frame_on_position(
+            video.slider.value()
+        )
+        expected_video = QPixmap.fromImage(
+            widgets._array_to_qimage(expected_frame)
+        ).toImage()
+        assert video.canvas._source_pixmap.toImage() == expected_video
+
+        QTest.keyClick(organizer.image_list, Qt.Key.Key_Delete)
+        assert len(window.proj_image_entries) == 1
+        assert not area._input_pixmap.isNull()
+        assert area._fusion_pixmap.isNull()
+        assert area.fusion_image_label.text() == "Fusion preview unavailable"
+        assert video.canvas._source_pixmap.isNull()
+        assert not video.slider.isEnabled()
+        assert "two images" in video.canvas.text()
+
+        QTest.keyClick(organizer.image_list, Qt.Key.Key_Delete)
+        assert not window.proj_image_entries
+        assert area._input_pixmap.isNull()
+        assert area.input_image_label.text() == "Select an image to preview"
+        assert area._fusion_pixmap.isNull()
+        assert video.canvas._source_pixmap.isNull()
+        QTest.qWait(300)
+        assert "two images" in video.canvas.text()
+        assert not video.slider.isEnabled()
+
+    def test_undo_removal_restores_fusion_and_video_previews(self, window):
+        area = window.image_files_and_preview_area.preview_area
+        organizer = window.image_files_and_preview_area.image_files_organizer
+        organizer.image_list.setCurrentRow(2)
+        QTest.keyClick(organizer.image_list, Qt.Key.Key_Delete)
+        QTest.keyClick(organizer.image_list, Qt.Key.Key_Delete)
+        assert area._fusion_pixmap.isNull()
+        window.undo()
+        assert len(window.proj_image_entries) == 2
+        assert not area._fusion_pixmap.isNull()
+        QTest.qWait(300)
+        assert area.video_preview.slider.isEnabled()
 
 
 class TestVideoExport:
