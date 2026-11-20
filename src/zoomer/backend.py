@@ -14,7 +14,7 @@ CROSS_THICKNESS = 2
 CROSS_COLORS = [[255, 0, 0], [0, 255, 0], [0, 0, 255]]  # Red, Green, Blue
 FRAME_COLOR = [255, 0, 0]  # Blue
 FRAME_THICKNESS = 2
-BLEND_RANGE_DETECTION_RESOLUTION = 0.01
+BLEND_RANGE_DETECTION_RESOLUTION = 0.005
 
 VIDEO_FORMAT_CANDIDATES = (
     ("avi", "AVI", ("XVID", "MJPG", "DIVX", "HFYU")),
@@ -459,11 +459,11 @@ def get_blend_alpha_range(
 ) -> tuple:
     # Scan the size_alpha to find the range where both images can fill the
     # output frame
-    min_size_alpha_for_blending = 1.0
-    max_size_alpha_for_blending = 0.0
-    for test_size_alpha in np.linspace(
-        0, 1, num=int(1 / BLEND_RANGE_DETECTION_RESOLUTION) + 1
-    ):
+    test_points = np.linspace(
+        0, 1, num=int(1 / BLEND_RANGE_DETECTION_RESOLUTION), endpoint=True
+    )
+    simultaneous_fills_mask = np.zeros(len(test_points), dtype=bool)
+    for i, test_size_alpha in enumerate(test_points):
         intermediate_frame0_fills = _create_intermediate_frame(
             video_size,
             img0,
@@ -490,12 +490,22 @@ def get_blend_alpha_range(
             f"intermediate_frame1_fills = {intermediate_frame1_fills}"
         )
         if intermediate_frame0_fills and intermediate_frame1_fills:
-            if test_size_alpha < min_size_alpha_for_blending:
-                min_size_alpha_for_blending = test_size_alpha
-            if test_size_alpha > max_size_alpha_for_blending:
-                max_size_alpha_for_blending = test_size_alpha
-    return min_size_alpha_for_blending, max_size_alpha_for_blending
+            simultaneous_fills_mask[i] = True
+    return test_points, simultaneous_fills_mask
 
+
+# -------------------------------------------------------------------------
+def get_pair_blend_alpha_range(proj_data: dict, index: int) -> tuple:
+    images_data = proj_data["images_data"]
+    return get_blend_alpha_range(
+        np.array(proj_data["video_data"]["size"], dtype=np.int32),
+        images_data[index]["image"].get_cv_image(),
+        np.array(images_data[index]["next_points"], dtype=np.float32),
+        np.array(images_data[index]["frame"], dtype=np.float32),
+        images_data[index + 1]["image"].get_cv_image(),
+        np.array(images_data[index + 1]["prev_points"], dtype=np.float32),
+        np.array(images_data[index + 1]["frame"], dtype=np.float32),
+    )
 
 # -------------------------------------------------------------------------
 def create_blended_frame(

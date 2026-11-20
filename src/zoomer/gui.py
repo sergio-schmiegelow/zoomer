@@ -31,6 +31,7 @@ from .backend import (
     VideoGenerator,
     auto_align_images,
     create_blended_frame,
+    get_pair_blend_alpha_range,
     get_supported_video_formats,
     load_project,
     save_project,
@@ -693,7 +694,7 @@ class MainApp(QMainWindow):
         self._fusion_preview_timer.setSingleShot(True)
         self._fusion_preview_timer.setInterval(75)
         self._fusion_preview_timer.timeout.connect(
-            self.image_fusion_editor.refresh_fusion_preview
+            self._refresh_fusion_editor
         )
         self.workspace_splitter.addWidget(self.image_fusion_edition_area)
         self.setCentralWidget(self.workspace_splitter)
@@ -1080,6 +1081,24 @@ class MainApp(QMainWindow):
             self.image_files_and_preview_area.preview_area.set_fusion_frame(
                 None
             )
+        self._update_recommended_alpha_range()
+
+    def _update_recommended_alpha_range(self):
+        editor = self.image_fusion_editor
+        pair_index = editor.pair_index
+        if not 0 <= pair_index < len(self.proj_image_entries) - 1:
+            editor.set_recommended_alpha_range(None)
+            return
+        try:
+            _, mask = get_pair_blend_alpha_range(self.proj_data, pair_index)
+        except Exception as error:
+            print(error)
+            mask = None
+        editor.set_recommended_alpha_range(mask)
+
+    def _refresh_fusion_editor(self):
+        self._update_recommended_alpha_range()
+        self.image_fusion_editor.refresh_fusion_preview()
 
     def _navigate_pair(self, pair_index):
         organizer = self.image_files_and_preview_area.image_files_organizer

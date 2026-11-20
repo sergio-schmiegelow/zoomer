@@ -1014,6 +1014,32 @@ class AlphaRangeSlider(QWidget):
         self.range_changed.emit(self._lower, self._upper)
 
 
+class RecommendedRangeBar(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._mask = []
+        self.setFixedHeight(10)
+
+    def set_mask(self, mask):
+        self._mask = [bool(value) for value in mask] if mask is not None else []
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        count = len(self._mask)
+        if count == 0:
+            return
+        left, right = 7, max(8, self.width() - 8)
+        step = (right - left) / count
+        painter.setPen(Qt.PenStyle.NoPen)
+        for i, valid in enumerate(self._mask):
+            painter.setBrush(QColor("#2e9e4f" if valid else "#707070"))
+            painter.drawRect(
+                QRectF(left + i * step + 0.5, 1, max(1.0, step - 1), 8)
+            )
+        event.accept()
+
+
 class ImageFilesAndPreviewArea(QSplitter):
     def __init__(self, parent=None):
         super().__init__(Qt.Orientation.Horizontal, parent)
@@ -1148,6 +1174,8 @@ class ImageFusionEditor(QWidget):
         controls_layout.addWidget(alpha_range_label, 1, 0)
         controls_layout.addWidget(self.alpha_range_slider, 1, 1)
         controls_layout.addWidget(self.alpha_range_value, 1, 2)
+        self.recommended_range_bar = RecommendedRangeBar(self.fusion_controls)
+        controls_layout.addWidget(self.recommended_range_bar, 2, 1)
         self.layout.addWidget(self.fusion_controls)
         self.previous_button.clicked.connect(self._previous_pair)
         self.next_button.clicked.connect(self._next_pair)
@@ -1195,6 +1223,9 @@ class ImageFusionEditor(QWidget):
         self.fusion_preview_requested.emit(
             self.pair_index, fusion_step, blend_alpha
         )
+
+    def set_recommended_alpha_range(self, mask):
+        self.recommended_range_bar.set_mask(mask)
 
     def refresh_fusion_preview(self):
         self._emit_fusion_preview_request()

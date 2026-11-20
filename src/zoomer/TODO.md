@@ -23,3 +23,5 @@
 * Option to auto fix rotation between images
 * Option to invert the full sequence of images
 * Review the strategy to select the initial alignment points (currently is random)
+* Auto alpha range
+* Multiplatform
