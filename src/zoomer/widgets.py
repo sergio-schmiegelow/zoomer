@@ -22,6 +22,7 @@ from PyQt6.QtGui import (
     QPixmap,
 )
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QAbstractItemView,
     QComboBox,
     QDialog,
@@ -1093,10 +1094,12 @@ class ImageFusionEditor(QWidget):
     alpha_range_edited = pyqtSignal(int, object)
     alignment_points_requested = pyqtSignal(int)
     alignment_interrupted = pyqtSignal()
+    auto_alpha_range_toggled = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("imageFusionEditor")
+        self.auto_alpha_range = True
         self.pair_index = 0
         self.proj_image_entries = []
         self.image_paths = []
@@ -1176,6 +1179,10 @@ class ImageFusionEditor(QWidget):
         controls_layout.addWidget(self.alpha_range_value, 1, 2)
         self.recommended_range_bar = RecommendedRangeBar(self.fusion_controls)
         controls_layout.addWidget(self.recommended_range_bar, 2, 1)
+        self.auto_alpha_checkbox = QCheckBox("Auto")
+        self.auto_alpha_checkbox.setChecked(True)
+        self.auto_alpha_checkbox.toggled.connect(self.auto_alpha_range_toggled)
+        controls_layout.addWidget(self.auto_alpha_checkbox, 2, 0)
         self.layout.addWidget(self.fusion_controls)
         self.previous_button.clicked.connect(self._previous_pair)
         self.next_button.clicked.connect(self._next_pair)
@@ -1224,8 +1231,34 @@ class ImageFusionEditor(QWidget):
             self.pair_index, fusion_step, blend_alpha
         )
 
+    def set_auto_alpha_range(self, enabled):
+        self.auto_alpha_range = bool(enabled)
+        self.auto_alpha_checkbox.blockSignals(True)
+        self.auto_alpha_checkbox.setChecked(self.auto_alpha_range)
+        self.auto_alpha_checkbox.blockSignals(False)
+
     def set_recommended_alpha_range(self, mask):
         self.recommended_range_bar.set_mask(mask)
+        if not self.auto_alpha_range or not self.alpha_range_slider.isEnabled():
+            return
+        lower, upper = 0, 100
+        best_start, best_length, start = 0, 0, None
+        count = len(mask) if mask is not None else 0
+        for i in range(count + 1):
+            valid = i < count and bool(mask[i])
+            if valid and start is None:
+                start = i
+            elif not valid and start is not None:
+                if i - start > best_length:
+                    best_start, best_length = start, i - start
+                start = None
+        if best_length > 0:
+            last = max(1, count - 1)
+            lower = round(100 * best_start / last)
+            upper = round(100 * (best_start + best_length - 1) / last)
+        if (lower, upper) != self.alpha_range_slider.values:
+            self.alpha_range_slider.set_values(lower, upper)
+            self._alpha_range_changed(lower, upper)
 
     def refresh_fusion_preview(self):
         self._emit_fusion_preview_request()
