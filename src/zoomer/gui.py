@@ -752,6 +752,7 @@ class MainApp(QMainWindow):
             self._video_generator.get_total_frames(),
             self.proj_video_settings.get("FPS", 30),
             self._video_generator.generate_video_frame_on_position,
+            self._video_generator.get_zoom_on_position,
         )
 
     def _set_frame_crosshair_enabled(self, enabled):

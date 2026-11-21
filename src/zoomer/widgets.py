@@ -507,6 +507,7 @@ class VideoPreviewWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._frame_provider = None
+        self._zoom_provider = None
         self._total_frames = 0
         self._needs_render = False
         self._exporting = False
@@ -522,7 +523,12 @@ class VideoPreviewWidget(QWidget):
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
         slider_row = QHBoxLayout()
+        self.zoom_label = QLabel("")
+        self.zoom_label.setObjectName("videoZoomLabel")
+        self.zoom_label.setMinimumWidth(60)
+        self.zoom_label.setToolTip("Zoom relative to the first frame")
         slider_row.addWidget(self.slider, 1)
+        slider_row.addWidget(self.zoom_label)
         slider_row.addWidget(self.position_label)
         layout.addLayout(slider_row)
 
@@ -626,8 +632,9 @@ class VideoPreviewWidget(QWidget):
     def is_playing(self):
         return self._timer.isActive()
 
-    def set_video(self, total_frames, fps, frame_provider):
+    def set_video(self, total_frames, fps, frame_provider, zoom_provider=None):
         self._frame_provider = frame_provider
+        self._zoom_provider = zoom_provider
         self._total_frames = max(0, int(total_frames))
         self._fps = max(1.0, float(fps))
         if self.is_playing():
@@ -641,6 +648,7 @@ class VideoPreviewWidget(QWidget):
     def set_error(self, message):
         self.pause()
         self._frame_provider = None
+        self._zoom_provider = None
         self._total_frames = 0
         self._needs_render = False
         self.slider.blockSignals(True)
@@ -735,6 +743,10 @@ class VideoPreviewWidget(QWidget):
             )
         else:
             self.position_label.setText("No video")
+        zoom = None
+        if has_video and self._zoom_provider is not None:
+            zoom = self._zoom_provider(self.slider.value())
+        self.zoom_label.setText(f"{zoom:.2f}x" if zoom is not None else "")
 
     def _position_changed(self, _value):
         self._update_controls()
@@ -836,8 +848,10 @@ class PreviewArea(QWidget):
         self.fusion_image_label.setPixmap(QPixmap())
         self.fusion_image_label.setText(message)
 
-    def set_video(self, total_frames, fps, frame_provider):
-        self.video_preview.set_video(total_frames, fps, frame_provider)
+    def set_video(self, total_frames, fps, frame_provider, zoom_provider=None):
+        self.video_preview.set_video(
+            total_frames, fps, frame_provider, zoom_provider
+        )
 
     def set_video_error(self, message):
         self.video_preview.set_error(message)

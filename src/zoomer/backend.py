@@ -837,7 +837,22 @@ class VideoGenerator:
         if error_msg:
             print("ERROR -", error_msg)
             return False, error_msg
+        self._image_zooms, _ = _calculate_zoom_array(self.proj_data)
         return True, None
+
+    # ---------------------------------------------------------------------
+    def get_zoom_on_position(self, position):
+        # Zoom relative to the first frame, interpolated in log space
+        if not 0 <= position < len(self._indexes_size_alphas_list):
+            return None
+        first_index, step = self._indexes_size_alphas_list[position]
+        log_zooms = np.log(self._image_zooms)
+        if first_index + 1 >= len(log_zooms):
+            return float(np.exp(log_zooms[first_index]))
+        log_zoom = log_zooms[first_index] + step * (
+            log_zooms[first_index + 1] - log_zooms[first_index]
+        )
+        return float(np.exp(log_zoom))
 
     # ---------------------------------------------------------------------
     def get_total_frames(self):
