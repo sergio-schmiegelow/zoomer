@@ -156,8 +156,6 @@ class _AffineTransformer:
     def __init__(
         self, start_points: np.ndarray, end_points: np.ndarray
     ) -> None:
-        # print(f'DEBUG - start_points: \n{start_points}')
-        # print(f'DEBUG - end_points:   \n{end_points}')
         self._start_points = start_points
         self._end_points = end_points
         self.calculate_transform_matrix()
@@ -237,10 +235,6 @@ def convert_points_and_frame_to_video_coordinates(
     points: np.ndarray, frame: np.ndarray, video_dims: np.ndarray
 ) -> np.ndarray:
     out_points = np.zeros(points.shape, dtype=np.float32)
-    # print(f'DEBUG - points: \n{points}')
-    # print(f'DEBUG - frame: \n{frame}')
-    # print(f'DEBUG - video_dims: \n{video_dims}')
-    # print(f'DEBUG - out_points: \n{out_points}')
     out_points[:, 0] = (points[:, 0] - frame[0][0]) * (
         video_dims[0] / (frame[1][0] - frame[0][0])
     )
@@ -484,11 +478,6 @@ def get_blend_alpha_range(
             1 - test_size_alpha,
             check_fill=True,
         )
-        print(
-            f"DEBUG - test_size_alpha = {test_size_alpha}, "
-            f"intermediate_frame0_fills = {intermediate_frame0_fills}, "
-            f"intermediate_frame1_fills = {intermediate_frame1_fills}"
-        )
         if intermediate_frame0_fills and intermediate_frame1_fills:
             simultaneous_fills_mask[i] = True
     return test_points, simultaneous_fills_mask
@@ -553,10 +542,6 @@ def create_blended_frame(
         1 - size_alpha,
         interpolation_method=interpolation_method,
     )
-    #correlation = _calculate_frames_correlation(
-    #    intermediate_frame0, intermediate_frame1
-    #)
-    #print(f"DEBUG - frames correlation: {correlation}")
     # Blend the two intermediate frames
     blended_frame = cv.addWeighted(
         intermediate_frame0,
@@ -624,11 +609,9 @@ def select_alingment_points(matches, kp0, kp1, num_points, n_best):
         return None, "Not enough matches to select alignment points"
     indexes = list(range(len(selected_matches)))
     indexes_combinations = list(combinations(indexes, num_points))
-    #print(f"DEBUG - Indexes combinations: {indexes_combinations}")
     #Create one transformation for each combination of matches
     transformations = []
     for combination in indexes_combinations:
-        #print(f"DEBUG - Processing combination: {combination}")
         img0_first_point  = kp0[matches[combination[0]][0].queryIdx].pt
         img1_first_point  = kp1[matches[combination[0]][0].trainIdx].pt
         img0_second_point = kp0[matches[combination[1]][0].queryIdx].pt
@@ -644,13 +627,11 @@ def select_alingment_points(matches, kp0, kp1, num_points, n_best):
     while len(indexes_combinations) > 1:
         avg_transformation = np.mean([transformations[i] for i in range(len(indexes_combinations))], axis=0)
         distances = [np.linalg.norm(transformations[i] - avg_transformation) for i in range(len(indexes_combinations))]
-        #print(f'DEBUG - Average distance: {np.mean(distances)}')
         furthest_index = np.argmax(distances)
         del indexes_combinations[furthest_index]
         del transformations[furthest_index]
     best_combination = indexes_combinations[0]
-    #print(f"DEBUG - Best combination: {best_combination}")
-    print(f"DEBUG - Time taken for select_alingment_points: {time.time() - start}")
+    #print(f"DEBUG - Time taken for select_alingment_points: {time.time() - start}")
     return [kp0[matches[i][0].queryIdx].pt for i in best_combination], [kp1[matches[i][0].trainIdx].pt for i in best_combination]
 
 
@@ -669,7 +650,7 @@ def sift_alignment(img0, img1) -> np.ndarray:
     if len(matches) < 3:
         print("DEBUG - Not enough matches found.")
         return None, None
-    print(f"DEBUG - Total matches found: {len(matches)}")
+    #print(f"DEBUG - Total matches found: {len(matches)}")
     return select_alingment_points(matches, kp0, kp1, 3, 15)
 
 
@@ -691,7 +672,7 @@ def orb_alignment(img0, img1) -> np.ndarray:
     if len(matches) < 3:
         print("DEBUG - Not enough matches found.")
         return None, None
-    print(f"DEBUG - Total matches found: {len(matches)}")
+    #print(f"DEBUG - Total matches found: {len(matches)}")
     matches = sorted(matches, key=lambda x: x.distance)
 
     img0_first_point = kp0[matches[0].queryIdx].pt
@@ -745,8 +726,8 @@ def _calculate_zoom_array(proj_data: dict) -> tuple:
         )
         current_zoom *= pair_ratio
         img_zooms.append(current_zoom)
-        print(f"DEBUG - Pair ratio for images {i} and {i + 1}: {pair_ratio}")
-        print(f"Zoom for image {i}:{current_zoom}")
+        #print(f"DEBUG - Pair ratio for images {i} and {i + 1}: {pair_ratio}")
+        #print(f"Zoom for image {i}:{current_zoom}")
     # if img_zooms is not an full increasing or decreasing sequence, return error
     if not (np.all(np.diff(img_zooms) >= 0) or np.all(np.diff(img_zooms) <= 0)):
         error_msg = "Image zooms are not in full increasing or decreasing order"
@@ -775,7 +756,6 @@ def _calculate_frames_fusion_and_size_alpha(proj_data: dict):
     log_zoom_array = np.log(zoom_array)
     zoom_distances = np.abs(log_zoom_array - log_zoom_array[0])
     frame_distances = np.linspace(0, zoom_distances[-1], num=total_frames)
-    print("DEBUG - Frames log zoom distances:", frame_distances)
     indexes_steps_list = []
     for frame_distance in frame_distances:
         if frame_distance <= zoom_distances[0]:
@@ -873,10 +853,6 @@ class VideoGenerator:
 
     # ---------------------------------------------------------------------
     def generate_video_frame(self, first_index, size_alpha):
-        print(
-            f"DEBUG - Frame first index: {first_index}, "
-            f"size_alpha: {size_alpha}"
-        )
         # Interpolation selection is temporarily disabled: always logarithmic
         interpolation_method = "log"
         blend_alpha_range = self.proj_data["images_data"][first_index].get(
