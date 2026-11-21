@@ -1576,6 +1576,56 @@ class VideoSettingsWidget(QWidget):
         self.pause_after_spin.setSuffix(" s")
         layout.addRow("Pause after", self.pause_after_spin)
 
+        tooltips = (
+            (
+                self.video_format_combo,
+                "Container/codec of the exported video file. Only formats "
+                "supported by this OpenCV build are listed.",
+            ),
+            (
+                self.video_size_combo,
+                "Resolution of the output video. Choose Custom to type the "
+                "dimensions manually.",
+            ),
+            (
+                size_row,
+                "Width and height of the output video in pixels "
+                "(editable only when Video size is Custom).",
+            ),
+            (
+                self.frame_rate_combo,
+                "Frames per second of the output video. Higher values give "
+                "smoother zooms but need more frames to render.",
+            ),
+            (
+                self.custom_frame_rate,
+                "Frames per second used when Framerate is Custom.",
+            ),
+            (
+                self.pause_before_spin,
+                "Time the video holds the first image before the zoom "
+                "starts.",
+            ),
+            (
+                self.duration_spin,
+                "Duration of the zooming itself, from the first to the "
+                "last image. The total frame count is duration x framerate.",
+            ),
+            (
+                self.pause_after_spin,
+                "Time the video holds the last image after the zoom ends.",
+            ),
+        )
+        for field, tooltip in tooltips:
+            label = layout.labelForField(field)
+            if label is not None:
+                label.setToolTip(tooltip)
+            if isinstance(field, QWidget):
+                field.setToolTip(tooltip)
+            else:
+                for index in range(field.count()):
+                    field.itemAt(index).widget().setToolTip(tooltip)
+
         self.video_size_combo.currentIndexChanged.connect(
             self._select_video_size
         )
