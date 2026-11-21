@@ -1148,6 +1148,11 @@ class ImageFusionEditor(QWidget):
         )
         self.find_alignment_button.setObjectName("findAlignmentPoints")
         self.find_alignment_button.setEnabled(False)
+        self.find_alignment_button.setToolTip(
+            "Tries to automatically find the alignment points.\n"
+            "If the result is not good, temporarily resize both frames to "
+            "about the same area or adjust the points manually."
+        )
         self.navigation.addWidget(self.previous_button)
         self.navigation.addStretch(1)
         self.navigation.addWidget(self.pair_label)
@@ -1216,6 +1221,26 @@ class ImageFusionEditor(QWidget):
         self.auto_alpha_checkbox.setChecked(True)
         self.auto_alpha_checkbox.toggled.connect(self.auto_alpha_range_toggled)
         controls_layout.addWidget(self.auto_alpha_checkbox, 2, 0)
+        for widget in (
+            fusion_step_label,
+            self.fusion_step_slider,
+            self.fusion_step_value,
+        ):
+            widget.setToolTip("Step of the fusion for the fusion preview")
+        for widget in (
+            alpha_range_label,
+            self.alpha_range_slider,
+            self.alpha_range_value,
+        ):
+            widget.setToolTip("Range of the images crossfade")
+        self.recommended_range_bar.setToolTip(
+            "Recommended alpha range: in the green area, both images fill "
+            "the video frame."
+        )
+        self.auto_alpha_checkbox.setToolTip(
+            "If enabled, automatically set the alpha range to the largest "
+            "recommended range."
+        )
         self.layout.addWidget(self.fusion_controls)
         self.previous_button.clicked.connect(self._previous_pair)
         self.next_button.clicked.connect(self._next_pair)

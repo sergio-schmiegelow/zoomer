@@ -320,6 +320,20 @@ class MainApp(QMainWindow):
         self.cfg_auto_open_last_project_action.toggled.connect(
             self._set_auto_open_last_project
         )
+        options_menu.setToolTipsVisible(True)
+        self.cfg_frame_crosshair_action.setToolTip(
+            "Show a crosshair at the center of the frame in the image "
+            "editor. Drag it to move the frame."
+        )
+        self.cfg_auto_alpha_range_action.setToolTip(
+            "Automatically set each pair's alpha range to the largest "
+            "contiguous range where both images fill the video frame "
+            "(full range if there is none)."
+        )
+        self.cfg_auto_open_last_project_action.setToolTip(
+            "Reopen the last project automatically when the application "
+            "starts."
+        )
 
     def _save_cfg(self):
         self.cfg_path.parent.mkdir(parents=True, exist_ok=True)
