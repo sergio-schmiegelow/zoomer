@@ -1143,9 +1143,6 @@ class MainApp(QMainWindow):
                 pair_index,
                 size_alpha,
                 blend_alpha,
-                interpolation_method=self.proj_video_settings.get(
-                    "interpolation_method", "log"
-                ),
             )
         except Exception as error:
             print(error)

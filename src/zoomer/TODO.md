@@ -1,5 +1,6 @@
 # TODO
 
+* Create a backendClass to put most of the backend methods and avoid the multiple parameter passing
 * Include the following video options:
   * Continuous log (this is the current one)
     * It requires a continuous zoom in or zoom out
@@ -23,5 +24,4 @@
 * Option to auto fix rotation between images
 * Option to invert the full sequence of images
 * Review the strategy to select the initial alignment points (currently is random)
-* Auto alpha range
 * Multiplatform

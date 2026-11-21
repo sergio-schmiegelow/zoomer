@@ -1543,11 +1543,6 @@ class VideoSettingsWidget(QWidget):
         self.pause_after_spin.setSuffix(" s")
         layout.addRow("Pause after", self.pause_after_spin)
 
-        self.interpolation_method_combo = QComboBox()
-        self.interpolation_method_combo.addItem("Logarithmic", "log")
-        self.interpolation_method_combo.addItem("Linear", "linear")
-        layout.addRow("Interpolation", self.interpolation_method_combo)
-
         self.video_size_combo.currentIndexChanged.connect(
             self._select_video_size
         )
@@ -1603,13 +1598,6 @@ class VideoSettingsWidget(QWidget):
         self.pause_before_spin.setValue(video_data.get("pause_before", 0))
         self.duration_spin.setValue(video_data.get("duration", 10))
         self.pause_after_spin.setValue(video_data.get("pause_after", 0))
-        interpolation_method = video_data.get("interpolation_method", "log")
-        method_index = self.interpolation_method_combo.findData(
-            interpolation_method
-        )
-        self.interpolation_method_combo.setCurrentIndex(
-            method_index if method_index >= 0 else 0
-        )
 
     def _select_video_size(self, index):
         custom = self.video_size_combo.itemData(index) is None
@@ -1640,9 +1628,6 @@ class VideoSettingsWidget(QWidget):
             "pause_before": self.pause_before_spin.value(),
             "duration": self.duration_spin.value(),
             "pause_after": self.pause_after_spin.value(),
-            "interpolation_method": (
-                self.interpolation_method_combo.currentData()
-            ),
         }
 
 

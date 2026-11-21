@@ -877,9 +877,8 @@ class VideoGenerator:
             f"DEBUG - Frame first index: {first_index}, "
             f"size_alpha: {size_alpha}"
         )
-        interpolation_method = self.proj_data["video_data"].get(
-            "interpolation_method", "log"
-        )
+        # Interpolation selection is temporarily disabled: always logarithmic
+        interpolation_method = "log"
         blend_alpha_range = self.proj_data["images_data"][first_index].get(
             "alpha_range", (0.0, 1.0)
         )
