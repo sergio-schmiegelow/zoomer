@@ -609,6 +609,7 @@ class VideoPreviewWidget(QWidget):
         layout.addLayout(buttons_row)
 
         self.canvas = _FitImageLabel("Video preview unavailable")
+        self.canvas.setMinimumHeight(80)
         layout.addWidget(self.canvas, 1)
 
         self.slider.valueChanged.connect(self._position_changed)
@@ -1845,7 +1846,7 @@ class ImageMarkersEditor(QWidget):
         self._marker_animation_timer.setInterval(16)
         self._marker_animation_timer.timeout.connect(self.update)
         self._marker_animation_timer.start()
-        self.setMinimumSize(480, 360)
+        self.setMinimumSize(480, 120)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
@@ -1902,7 +1903,39 @@ class ImageMarkersEditor(QWidget):
             max(all_x) - min(all_x),
             max(all_y) - min(all_y),
         )
-        self._zoom_to_bounds(bounds)
+        marker_radius = (CROSS_SIZE - 4) / 2 + 2.5 * (
+            self.cfg_marker_thickness
+        )
+        features = [(point, marker_radius) for point in self.points]
+        features.extend(
+            [
+                (QPointF(self.frame_x, self.frame_y), 4),
+                (QPointF(frame_right, frame_bottom), 4),
+            ]
+        )
+        if self.cfg_frame_crosshair_enabled:
+            features.append(
+                (
+                    QPointF(
+                        self.frame_x + self.frame_width / 2,
+                        self.frame_y + self.frame_height / 2,
+                    ),
+                    CROSS_SIZE + 4,
+                )
+            )
+        padding_x = padding_y = 0
+        while True:
+            self._zoom_to_bounds(bounds, padding_x, padding_y)
+            new_x, new_y = padding_x, padding_y
+            for point, radius in features:
+                position = self.image_to_widget(point)
+                if not radius <= position.x() <= self.width() - radius:
+                    new_x = max(new_x, radius)
+                if not radius <= position.y() <= self.height() - radius:
+                    new_y = max(new_y, radius)
+            if (new_x, new_y) == (padding_x, padding_y):
+                break
+            padding_x, padding_y = new_x, new_y
 
     def zoom_to_points(self):
         if not self.points:
@@ -1928,17 +1961,18 @@ class ImageMarkersEditor(QWidget):
             )
         )
 
-    def _zoom_to_bounds(self, bounds):
+    def _zoom_to_bounds(
+        self, bounds, padding_x=CROSS_SIZE + 8, padding_y=CROSS_SIZE + 8
+    ):
         if self.width() <= 0 or self.height() <= 0:
             return
         if bounds.width() <= 0:
             bounds.setWidth(1.0)
         if bounds.height() <= 0:
             bounds.setHeight(1.0)
-        padding = CROSS_SIZE + 8
-        view = QRectF(self.rect())
-        available_width = max(1, view.width() - 2 * padding)
-        available_height = max(1, view.height() - 2 * padding)
+        view = QRectF(0, 0, self.width(), self.height())
+        available_width = max(1, view.width() - 2 * padding_x)
+        available_height = max(1, view.height() - 2 * padding_y)
         self.scale = min(
             available_width / bounds.width(),
             available_height / bounds.height(),

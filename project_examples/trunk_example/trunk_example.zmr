@@ -7,10 +7,9 @@
       1080
     ],
     "FPS": 60,
-    "pause_before": 1.0,
+    "pause_before": 0.0,
     "duration": 15.0,
-    "pause_after": 1.0,
-    "interpolation_method": "log"
+    "pause_after": 0.0
   },
   "images_data": [
     {
@@ -43,7 +42,7 @@
         0.68,
         1.0
       ],
-      "image": "trunk_01.jpg"
+      "image": "/home/sergio/dev/zoomer/project_examples/trunk_example/trunk_01.jpg"
     },
     {
       "frame": [
@@ -88,7 +87,7 @@
         0.72,
         1.0
       ],
-      "image": "trunk_02.jpg"
+      "image": "/home/sergio/dev/zoomer/project_examples/trunk_example/trunk_02.jpg"
     },
     {
       "frame": [
@@ -133,7 +132,7 @@
         0.66,
         1.0
       ],
-      "image": "trunk_03.jpg"
+      "image": "/home/sergio/dev/zoomer/project_examples/trunk_example/trunk_03.jpg"
     },
     {
       "frame": [
@@ -178,7 +177,7 @@
         0.54,
         1.0
       ],
-      "image": "trunk_04.jpg"
+      "image": "/home/sergio/dev/zoomer/project_examples/trunk_example/trunk_04.jpg"
     },
     {
       "frame": [
@@ -223,7 +222,7 @@
         0.66,
         1.0
       ],
-      "image": "trunk_05.jpg"
+      "image": "/home/sergio/dev/zoomer/project_examples/trunk_example/trunk_05.jpg"
     },
     {
       "frame": [
@@ -268,7 +267,7 @@
         0.61,
         1.0
       ],
-      "image": "trunk_07.jpg"
+      "image": "/home/sergio/dev/zoomer/project_examples/trunk_example/trunk_07.jpg"
     },
     {
       "frame": [
@@ -313,7 +312,7 @@
         0.4,
         1.0
       ],
-      "image": "trunk_08.jpg"
+      "image": "/home/sergio/dev/zoomer/project_examples/trunk_example/trunk_08.jpg"
     },
     {
       "frame": [
@@ -358,7 +357,7 @@
         0.0,
         1.0
       ],
-      "image": "trunk_09.jpg"
+      "image": "/home/sergio/dev/zoomer/project_examples/trunk_example/trunk_09.jpg"
     },
     {
       "frame": [
@@ -403,7 +402,7 @@
         0.62,
         1.0
       ],
-      "image": "trunk_10.jpg"
+      "image": "/home/sergio/dev/zoomer/project_examples/trunk_example/trunk_10.jpg"
     },
     {
       "frame": [
@@ -448,7 +447,7 @@
         0.66,
         1.0
       ],
-      "image": "trunk_11.jpg"
+      "image": "/home/sergio/dev/zoomer/project_examples/trunk_example/trunk_11.jpg"
     },
     {
       "frame": [
@@ -493,7 +492,7 @@
         0.64,
         1.0
       ],
-      "image": "trunk_13.jpg"
+      "image": "/home/sergio/dev/zoomer/project_examples/trunk_example/trunk_13.jpg"
     },
     {
       "frame": [
@@ -538,7 +537,7 @@
         0.64,
         1.0
       ],
-      "image": "trunk_14.jpg"
+      "image": "/home/sergio/dev/zoomer/project_examples/trunk_example/trunk_14.jpg"
     },
     {
       "frame": [
@@ -583,7 +582,7 @@
         0.52,
         1.0
       ],
-      "image": "trunk_16.jpg"
+      "image": "/home/sergio/dev/zoomer/project_examples/trunk_example/trunk_16.jpg"
     },
     {
       "frame": [
@@ -628,7 +627,7 @@
         0.4,
         1.0
       ],
-      "image": "trunk_17.jpg"
+      "image": "/home/sergio/dev/zoomer/project_examples/trunk_example/trunk_17.jpg"
     },
     {
       "frame": [
@@ -656,7 +655,7 @@
         ]
       ],
       "next_points": null,
-      "image": "trunk_18.jpg"
+      "image": "/home/sergio/dev/zoomer/project_examples/trunk_example/trunk_18.jpg"
     }
   ]
 }

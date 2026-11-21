@@ -46,7 +46,8 @@ The window title shows the current project name.
    - Drag the frame by its edges to move it; drag the corners to resize it
      while keeping the video aspect ratio.
    - Mouse wheel zooms, dragging empty space pans. The buttons next to each
-     editor fit everything, the markers or the frame.
+     editor fit everything, the markers or the frame. *Zoom all* uses the
+     available space while keeping the frame and markers visible.
    - *Find alignment points* proposes markers using SIFT feature matching.
      A banner shows progress and can be interrupted; the project changes only
      when the search succeeds. After the search, the correlation of the two
@@ -75,6 +76,9 @@ The window title shows the current project name.
    fusion editor selects **Fusion preview**. A calculation problem, such as
    markers that make the zoom change direction between images, is reported
    on the preview canvas.
+   The initial divider position balances the displayed preview and editor
+   image heights as closely as the layout permits. Drag the divider to give
+   either area more space.
    Removing images updates the previews; fusion and video are unavailable
    when fewer than two images remain.
 

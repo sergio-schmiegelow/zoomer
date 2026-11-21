@@ -93,6 +93,48 @@ class TestImageMarkersEditor:
         editor.zoom_to_points()
         assert editor.scale > overview
 
+    @pytest.mark.parametrize("size", [(480, 240), (480, 600)])
+    def test_zoom_all_fits_image_without_unnecessary_padding(
+        self, editor, size
+    ):
+        editor.resize(*size)
+        editor.frame_x = 40
+        editor.frame_y = 30
+        editor.frame_width = 120
+        editor.frame_aspect_ratio = 4 / 3
+        editor.set_points([(50, 40), (150, 40), (100, 110)])
+        editor.zoom_all()
+
+        assert editor.scale == pytest.approx(
+            min(editor.width() / 200, editor.height() / 150)
+        )
+        top_left = editor.image_to_widget(QPointF(0, 0))
+        bottom_right = editor.image_to_widget(QPointF(200, 150))
+        assert top_left.x() >= 0 and top_left.y() >= 0
+        assert bottom_right.x() <= editor.width()
+        assert bottom_right.y() <= editor.height()
+
+    def test_zoom_all_keeps_outside_markers_and_frame_visible(self, editor):
+        editor.frame_x = -30
+        editor.frame_y = -20
+        editor.frame_width = 270
+        editor.frame_aspect_ratio = 270 / 190
+        editor.set_points([(-60, -40), (110, 50), (100, 190)])
+        editor.zoom_all()
+
+        radius = (widgets.CROSS_SIZE - 4) / 2 + 2.5 * (
+            editor.cfg_marker_thickness
+        )
+        for point in editor.points:
+            position = editor.image_to_widget(point)
+            assert radius - 1e-6 <= position.x() <= editor.width() - radius
+            assert radius - 1e-6 <= position.y() <= editor.height() - radius
+        frame_top = editor.image_to_widget(QPointF(-30, -20))
+        frame_bottom = editor.image_to_widget(QPointF(240, 170))
+        assert frame_top.x() >= 4 and frame_top.y() >= 4
+        assert frame_bottom.x() <= editor.width() - 4
+        assert frame_bottom.y() <= editor.height() - 4
+
     def test_dragging_a_point_emits_new_coordinates(self, editor):
         received = []
         editor.points_changed.connect(received.append)
@@ -113,7 +155,7 @@ class TestImageMarkersEditor:
 
     def test_dragging_empty_space_pans(self, editor):
         pan = QPointF(editor.pan)
-        start = QPointF(5, 5)
+        start = QPointF(30, 180)
         editor.mousePressEvent(
             mouse_event(QEvent.Type.MouseButtonPress, start)
         )

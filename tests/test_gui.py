@@ -5,7 +5,16 @@ from threading import Event
 
 import numpy as np
 import pytest
-from PyQt6.QtCore import QMimeData, QPoint, QPointF, Qt, QThread, QTimer, QUrl
+from PyQt6.QtCore import (
+    QMimeData,
+    QPoint,
+    QPointF,
+    QRectF,
+    Qt,
+    QThread,
+    QTimer,
+    QUrl,
+)
 from PyQt6.QtGui import QDragEnterEvent, QPixmap, QWheelEvent
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox
@@ -51,6 +60,98 @@ def stub_dialogs(monkeypatch, tmp_path, name="Fresh"):
         "getSaveFileName",
         staticmethod(lambda *a, **k: (str(tmp_path / name), "")),
     )
+
+
+@pytest.mark.parametrize(
+    ("size", "start_empty", "input_tab"),
+    [
+        ((1000, 700), False, False),
+        ((1200, 900), True, False),
+        ((1200, 900), True, True),
+        ((1000, 1000), False, False),
+    ],
+)
+def test_initial_preview_and_editor_image_heights_match(
+    qapp, tmp_path, proj_data, no_dialogs, size, start_empty, input_tab
+):
+    initial_data = None if start_empty else proj_data
+    main = gui.MainApp(initial_data, cfg_path=tmp_path / "zoomer.cfg")
+    main.resize(*size)
+    main.set_image_workspace(main.proj_data["images_data"], tmp_path)
+    main.show()
+    if start_empty:
+        QApplication.processEvents()
+        if input_tab:
+            area = main.image_files_and_preview_area.preview_area
+            area.tabs.setCurrentWidget(area.input_image_label)
+        main._apply_restored_config(proj_data)
+    QTest.qWait(100)
+
+    preview = main.image_files_and_preview_area.preview_area
+    preview_canvas = (
+        preview.input_image_label if input_tab else preview.fusion_image_label
+    )
+    pixmap = preview_canvas._source_pixmap
+    assert not pixmap.isNull()
+    preview_image_height = min(
+        preview_canvas.height(),
+        preview_canvas.width() * pixmap.height() / pixmap.width(),
+    )
+    for index in range(2):
+        canvas = main.image_fusion_editor.pair_splitter.widget(index).editor
+        image_rect = QRectF(
+            canvas.image_to_widget(QPointF(0, 0)),
+            canvas.image_to_widget(
+                QPointF(canvas.image.width(), canvas.image.height())
+            ),
+        )
+        visible_height = image_rect.intersected(QRectF(canvas.rect())).height()
+        assert visible_height == pytest.approx(preview_image_height, abs=2)
+    main.workspace_splitter.moveSplitter(500, 1)
+    sizes = main.workspace_splitter.sizes()
+    main._show_pair(1)
+    QTest.qWait(20)
+    assert main.workspace_splitter.sizes() == sizes
+    main.close()
+
+
+def test_initial_balance_respects_divider_moved_before_loading(
+    qapp, tmp_path, proj_data, no_dialogs
+):
+    main = gui.MainApp(cfg_path=tmp_path / "zoomer.cfg")
+    main.resize(1200, 900)
+    main.set_image_workspace([], tmp_path)
+    main.show()
+    QApplication.processEvents()
+    main.workspace_splitter.moveSplitter(450, 1)
+    sizes = main.workspace_splitter.sizes()
+    main._apply_restored_config(proj_data)
+    QTest.qWait(100)
+    assert main.workspace_splitter.sizes() == sizes
+    main.close()
+
+
+def test_fusion_editor_can_shrink_to_enlarge_preview(window):
+    window.resize(1200, 900)
+    QTest.qWait(20)
+    splitter = window.workspace_splitter
+    splitter.setSizes([600, 300])
+    QApplication.processEvents()
+
+    preview_height, editor_height = splitter.sizes()
+    assert 0 < editor_height <= 410
+    assert preview_height > editor_height
+    for index in range(2):
+        column = window.image_fusion_editor.pair_splitter.widget(index)
+        assert column.editor.height() > 0
+        for name in ("zoomAllButton", "zoomPointsButton", "zoomFrameButton"):
+            button = column.findChild(widgets.QToolButton, name)
+            assert button.isVisible()
+            assert button.geometry().bottom() < column.height()
+
+    splitter.setSizes([350, 550])
+    QApplication.processEvents()
+    assert splitter.sizes()[1] > editor_height
 
 
 class TestProjects:

@@ -6,7 +6,7 @@ from collections import deque
 from pathlib import Path
 from threading import Event
 
-from PyQt6.QtCore import QEvent, Qt, QThread, QTimer
+from PyQt6.QtCore import QEvent, QPointF, QRectF, Qt, QThread, QTimer
 from PyQt6.QtGui import QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
@@ -718,6 +718,10 @@ class MainApp(QMainWindow):
         organizer.selected_image_changed.connect(self._select_pair_from_path)
         organizer.image_files_changed.connect(self._organizer_files_changed)
         self.workspace_splitter = QSplitter(Qt.Orientation.Vertical, self)
+        self._initial_workspace_split_pending = True
+        self.workspace_splitter.splitterMoved.connect(
+            self._workspace_splitter_moved
+        )
         self.workspace_splitter.addWidget(self.image_files_and_preview_area)
         self.image_fusion_edition_area = ImageFusionEditionArea(self)
         self.image_fusion_editor = self.image_fusion_edition_area.editor
@@ -764,6 +768,84 @@ class MainApp(QMainWindow):
         self._show_pair(max(0, organizer.image_list.currentRow()))
         self._schedule_video_preview()
         self._set_project_modified(False)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if hasattr(self, "workspace_splitter"):
+            self._schedule_initial_workspace_split()
+
+    def _workspace_splitter_moved(self, _position, _index):
+        self._initial_workspace_split_pending = False
+
+    def _schedule_initial_workspace_split(self):
+        if (
+            self._initial_workspace_split_pending
+            and self.isVisible()
+            and self.image_fusion_editor.pair_splitter.count()
+        ):
+            QTimer.singleShot(0, self._set_initial_workspace_split)
+
+    def _set_initial_workspace_split(self):
+        if (
+            not self._initial_workspace_split_pending
+            or not self.isVisible()
+            or not self.image_fusion_editor.pair_splitter.count()
+        ):
+            return
+        preview = self.image_files_and_preview_area.preview_area
+        preview_canvas = (
+            preview.input_image_label
+            if preview.tabs.currentWidget() is preview.input_image_label
+            else preview.fusion_image_label
+        )
+        editors = [
+            self.image_fusion_editor.pair_splitter.widget(index).editor
+            for index in range(self.image_fusion_editor.pair_splitter.count())
+        ]
+        splitter = self.workspace_splitter
+        total = sum(splitter.sizes())
+        low = splitter.widget(0).minimumSizeHint().height()
+        high = total - splitter.widget(1).minimumSizeHint().height()
+        best_position = splitter.sizes()[0]
+        best_error = float("inf")
+
+        # Compare the painted image heights, accounting for fit and clipping.
+        while low <= high:
+            position = (low + high) // 2
+            splitter.setSizes([position, total - position])
+            pixmap = preview_canvas._source_pixmap
+            if pixmap.isNull():
+                preview_height = preview_canvas.height()
+            else:
+                preview_height = min(
+                    preview_canvas.height(),
+                    preview_canvas.width() * pixmap.height() / pixmap.width(),
+                )
+            heights = []
+            for editor in editors:
+                editor.zoom_to_frame()
+                image_rect = QRectF(
+                    editor.image_to_widget(QPointF(0, 0)),
+                    editor.image_to_widget(
+                        QPointF(editor.image.width(), editor.image.height())
+                    ),
+                )
+                heights.append(
+                    image_rect.intersected(QRectF(editor.rect())).height()
+                )
+            error = sum((height - preview_height) ** 2 for height in heights)
+            if error < best_error:
+                best_error = error
+                best_position = position
+            if preview_height < sum(heights) / len(heights):
+                low = position + 1
+            else:
+                high = position - 1
+
+        splitter.setSizes([best_position, total - best_position])
+        self._initial_workspace_split_pending = False
+        for editor in editors:
+            editor.zoom_to_frame()
 
     def _schedule_video_preview(self):
         self._video_preview_timer.start()
@@ -1150,6 +1232,7 @@ class MainApp(QMainWindow):
         self.image_fusion_editor.set_pair(
             self.proj_image_entries, paths, pair_index
         )
+        self._schedule_initial_workspace_split()
         if len(paths) < 2:
             self.image_files_and_preview_area.preview_area.set_fusion_frame(
                 None
