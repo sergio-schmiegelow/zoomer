@@ -130,8 +130,11 @@ class ImageClass:
 def load_project(filename: str) -> dict:
     with open(filename, "r") as f:
         proj_data = json.load(f)
+    project_directory = Path(filename).resolve().parent
     for image_data in proj_data["images_data"]:
-        image_data["image"] = ImageClass(str(image_data["image"]))
+        # Relative image paths are relative to the project file
+        image_path = project_directory / str(image_data["image"])
+        image_data["image"] = ImageClass(str(image_path))
     return proj_data
 
 
