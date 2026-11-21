@@ -6,6 +6,8 @@ choose the video frame (crop) for each image. Zoomer scales and blends the
 pair so that the camera appears to dive from one image into the next, and
 chains all the pairs into a single video.
 
+![Zoomer interface with the trunk example project loaded](docs/trunk-example-screenshot.png)
+
 ## Features
 
 - Desktop editor built with PyQt6.
