@@ -843,7 +843,8 @@ class VideoGenerator:
     # ---------------------------------------------------------------------
     def get_zoom_on_position(self, position):
         # Zoom relative to the first frame, interpolated in log space
-        if not 0 <= position < len(self._indexes_size_alphas_list):
+        frames = self._indexes_size_alphas_list
+        if frames is None or not 0 <= position < len(frames):
             return None
         first_index, step = self._indexes_size_alphas_list[position]
         log_zooms = np.log(self._image_zooms)

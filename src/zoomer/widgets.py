@@ -646,9 +646,9 @@ class VideoPreviewWidget(QWidget):
         self._render_current_frame()
 
     def set_error(self, message):
-        self.pause()
         self._frame_provider = None
         self._zoom_provider = None
+        self.pause()
         self._total_frames = 0
         self._needs_render = False
         self.slider.blockSignals(True)

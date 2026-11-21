@@ -1,8 +1,6 @@
 import argparse
 import copy
 import json
-import math
-import random
 import sys
 from collections import deque
 from pathlib import Path
@@ -1020,44 +1018,28 @@ class MainApp(QMainWindow):
         return {
             "image": image_object,
             "frame": frame,
-            "prev_points": self._random_equilateral_triangle(
+            "prev_points": self._initial_alignment_triangle(
                 frame_x, frame_y, frame_width, frame_height
             ),
-            "next_points": self._random_equilateral_triangle(
+            "next_points": self._initial_alignment_triangle(
                 frame_x, frame_y, frame_width, frame_height
             ),
         }
 
     @staticmethod
-    def _random_equilateral_triangle(
+    def _initial_alignment_triangle(
         frame_x, frame_y, frame_width, frame_height
     ):
-        angle = random.uniform(0, 2 * math.pi)
-        unit_vertices = [
-            (
-                math.cos(angle + index * 2 * math.pi / 3),
-                math.sin(angle + index * 2 * math.pi / 3),
-            )
-            for index in range(3)
+        margin = 0.1 * min(frame_width, frame_height)
+        left = frame_x + margin
+        right = frame_x + frame_width - margin
+        top = frame_y + margin
+        bottom = frame_y + frame_height - margin
+        return [
+            [(left + right) / 2, top],
+            [left, bottom],
+            [right, bottom],
         ]
-        unit_xs = [vertex[0] for vertex in unit_vertices]
-        unit_ys = [vertex[1] for vertex in unit_vertices]
-        unit_width = max(unit_xs) - min(unit_xs)
-        unit_height = max(unit_ys) - min(unit_ys)
-        maximum_side = min(
-            frame_width / unit_width, frame_height / unit_height
-        )
-        side = maximum_side * random.uniform(0.35, 0.8)
-        vertices = [(x * side, y * side) for x, y in unit_vertices]
-        vertex_xs = [vertex[0] for vertex in vertices]
-        vertex_ys = [vertex[1] for vertex in vertices]
-        minimum_x = frame_x - min(vertex_xs)
-        maximum_x = frame_x + frame_width - max(vertex_xs)
-        minimum_y = frame_y - min(vertex_ys)
-        maximum_y = frame_y + frame_height - max(vertex_ys)
-        center_x = random.uniform(minimum_x, maximum_x)
-        center_y = random.uniform(minimum_y, maximum_y)
-        return [[center_x + x, center_y + y] for x, y in vertices]
 
     def save_autosave(self, mark_modified=True):
         self._schedule_video_preview()

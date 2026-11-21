@@ -23,5 +23,4 @@
   * Uses Delaunay Triangulation and & Voronoi Diagram (https://learnopencv.com/delaunay-triangulation-and-voronoi-diagram-using-opencv-c-python/)
 * Option to auto fix rotation between images
 * Option to invert the full sequence of images
-* Review the strategy to select the initial alignment points (currently is random)
 * Multiplatform
