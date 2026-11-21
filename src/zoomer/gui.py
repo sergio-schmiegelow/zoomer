@@ -202,6 +202,7 @@ class MainApp(QMainWindow):
         self._alignment_jobs = set()
         self._video_export_job = None
         self._video_generator = None
+        self._fusion_view_pair_index = None
         self._video_preview_timer = QTimer(self)
         self._video_preview_timer.setSingleShot(True)
         self._video_preview_timer.setInterval(200)
@@ -1151,7 +1152,11 @@ class MainApp(QMainWindow):
                 "Invalid fusion parameters"
             )
             return
-        self.image_files_and_preview_area.preview_area.set_fusion_frame(frame)
+        keep_view = pair_index == self._fusion_view_pair_index
+        self._fusion_view_pair_index = pair_index
+        self.image_files_and_preview_area.preview_area.set_fusion_frame(
+            frame, keep_view=keep_view
+        )
 
     def _alpha_range_edited(self, pair_index, alpha_range):
         if not 0 <= pair_index < len(self.proj_image_entries):

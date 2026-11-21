@@ -831,13 +831,19 @@ class PreviewArea(QWidget):
             )
         self._update_previews()
 
-    def set_fusion_frame(self, image):
+    def set_fusion_frame(self, image, keep_view=False):
         if image is None or not hasattr(image, "shape"):
             self._fusion_pixmap = QPixmap()
         else:
             qt_image = _array_to_qimage(image)
             self._fusion_pixmap = QPixmap.fromImage(qt_image)
-        self.fusion_image_label.set_source_pixmap(self._fusion_pixmap)
+        same_size = (
+            self._fusion_pixmap.size()
+            == self.fusion_image_label._source_pixmap.size()
+        )
+        self.fusion_image_label.set_source_pixmap(
+            self._fusion_pixmap, keep_view=keep_view and same_size
+        )
         if self._fusion_pixmap.isNull():
             self.fusion_image_label.setText("Fusion preview unavailable")
         self._update_previews()
