@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 from functools import lru_cache
 from itertools import combinations
@@ -146,13 +147,24 @@ def load_project(filename: str) -> dict:
 
 # -------------------------------------------------------------------------
 def save_project(filename: str, proj_data: dict) -> None:
+    project_directory = Path(filename).resolve().parent
     proj_data_copy = dict(proj_data)
     proj_data_copy["images_data"] = []
     for image_data in proj_data["images_data"]:
         image_data_copy = dict(image_data)
         image_object = image_data_copy["image"]
         if isinstance(image_object, ImageClass):
-            image_data_copy["image"] = str(image_object.get_image_path())
+            image_object = image_object.get_image_path()
+        image_path = Path(image_object)
+        if image_path.is_absolute():
+            try:
+                image_path = Path(
+                    os.path.relpath(image_path, project_directory)
+                )
+            except ValueError:
+                # Windows cannot make a relative path across drives.
+                pass
+        image_data_copy["image"] = image_path.as_posix()
         proj_data_copy["images_data"].append(image_data_copy)
     with open(filename, "w") as f:
         json.dump(proj_data_copy, f, indent=2)

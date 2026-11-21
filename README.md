@@ -44,6 +44,8 @@ chains all the pairs into a single video.
 - Changes are continuously written to `autosave.zmr` for crash recovery.
 - Named `.zmr` project files are saved explicitly with **Save project**,
   **Save project as**, or `Ctrl+S`.
+- Image paths are saved relative to each project file, except for images on
+  another Windows drive.
 - At startup, Zoomer offers to recover `autosave.zmr`; declining removes the
   stale recovery snapshot and continues normal startup.
 - Application preferences (`zoomer.cfg`): frame crosshair, auto open last

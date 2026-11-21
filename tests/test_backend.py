@@ -1,4 +1,6 @@
 import json
+import shutil
+from pathlib import Path
 
 import cv2 as cv
 import numpy as np
@@ -47,10 +49,69 @@ class TestProjectFiles:
         assert all(isinstance(e["image"], str) for e in saved["images_data"])
         assert saved["project_name"] == "Demo"
 
+    def test_saves_relative_paths_and_reopens_a_moved_project(
+        self, tmp_path, proj_data, monkeypatch
+    ):
+        original = tmp_path / "original"
+        project_dir = original / "projects"
+        project_dir.mkdir(parents=True)
+        images_dir = original / "images"
+        images_dir.mkdir()
+        for entry in proj_data["images_data"]:
+            source = entry["image"].get_image_path()
+            destination = images_dir / source.name
+            shutil.copyfile(source, destination)
+            entry["image"] = backend.ImageClass(str(destination))
+
+        target = project_dir / "out.zmr"
+        backend.save_project(str(target), proj_data)
+        saved = json.loads(target.read_text())
+        assert saved["images_data"][0]["image"] == "../images/image0.png"
+
+        moved = tmp_path / "moved"
+        shutil.copytree(original, moved)
+        monkeypatch.chdir(tmp_path)
+        loaded = backend.load_project(str(moved / "projects" / "out.zmr"))
+        assert (
+            loaded["images_data"][0]["image"].get_image_path()
+            == (moved / "images" / "image0.png").resolve()
+        )
+
+    def test_save_handles_string_paths_and_different_drives(
+        self, tmp_path, proj_data, monkeypatch
+    ):
+        target = tmp_path / "out.zmr"
+        absolute = proj_data["images_data"][0]["image"].get_image_path()
+        proj_data["images_data"][0]["image"] = str(absolute)
+        proj_data["images_data"][1]["image"] = "images/relative.png"
+        backend.save_project(str(target), proj_data)
+        saved = json.loads(target.read_text())
+        assert saved["images_data"][0]["image"] == absolute.name
+        assert saved["images_data"][1]["image"] == "images/relative.png"
+
+        def different_drives(*_args):
+            raise ValueError("different drives")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(backend.os.path, "relpath", different_drives)
+            backend.save_project(str(target), proj_data)
+        saved = json.loads(target.read_text())
+        assert Path(saved["images_data"][0]["image"]) == absolute
+
     def test_save_does_not_mutate_input(self, tmp_path, proj_data):
         backend.save_project(str(tmp_path / "out.zmr"), proj_data)
         first = proj_data["images_data"][0]["image"]
         assert isinstance(first, backend.ImageClass)
+
+    def test_loads_legacy_absolute_paths(self, tmp_path, proj_data):
+        target = tmp_path / "legacy.zmr"
+        backend.save_project(str(target), proj_data)
+        saved = json.loads(target.read_text())
+        original = proj_data["images_data"][0]["image"].get_image_path()
+        saved["images_data"][0]["image"] = str(original)
+        target.write_text(json.dumps(saved))
+        loaded = backend.load_project(str(target))
+        assert loaded["images_data"][0]["image"].get_image_path() == original
 
     def test_round_trip(self, tmp_path, proj_data):
         target = tmp_path / "out.zmr"

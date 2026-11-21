@@ -3,10 +3,11 @@
 ## Project (`.zmr`)
 
 A JSON document. Images are stored by path and are loaded into
-`zoomer.backend.ImageClass` objects when the project is opened. Saving always
-writes absolute image paths. Relative image paths are resolved against the
-folder of the project file when it is opened, which makes the bundled
-`project_examples/trunk_example/trunk_example.zmr` portable.
+`zoomer.backend.ImageClass` objects when the project is opened. Saving writes
+image paths relative to the project file's folder, using forward slashes.
+Existing projects with absolute image paths can still be opened. On Windows,
+images on a different drive are saved with absolute paths because relative
+paths cannot cross drives.
 
 ```json
 {
@@ -22,7 +23,7 @@ folder of the project file when it is opened, which makes the bundled
   },
   "images_data": [
     {
-      "image": "/home/me/leaf_images/leaf_1.jpg",
+      "image": "leaf_images/leaf_1.jpg",
       "frame": [[120.0, 80.0], [1080.0, 620.0]],
       "prev_points": null,
       "next_points": [[300.0, 200.0], [500.0, 220.0], [420.0, 400.0]],
@@ -48,8 +49,9 @@ folder of the project file when it is opened, which makes the bundled
 | `images_data[].prev_points` | Three markers matched with the previous image; `null` on the first image |
 | `images_data[].alpha_range` | Optional `[start, end]` in `0..1` (default `[0.0, 1.0]`) stored on the first image of a pair |
 
-Saving writes absolute paths, so re-saving a project that uses relative
-paths (such as the example) converts them.
+Move the project file together with its images, preserving their relative
+locations. Saving under a different name or in a different folder recalculates
+the image paths; images themselves are not copied.
 
 Each duration is converted separately to a whole number of frames by
 truncating `FPS * seconds`. Preview and export include the two pauses.
@@ -81,6 +83,8 @@ Missing keys fall back to the defaults; an unreadable file is ignored.
 ## Recovery (`autosave.zmr`)
 
 `autosave.zmr` uses the same JSON project structure as a named `.zmr` file.
+Its image paths are relative to the autosave's folder, which can differ from
+the named project's folder.
 It is atomically replaced after each project change and is offered for
 recovery on the next launch. Explicit Save and Save As write the named project
 file separately; Save does not rename or remove the recovery file.

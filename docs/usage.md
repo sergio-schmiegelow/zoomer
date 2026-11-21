@@ -85,6 +85,9 @@ The window title shows the current project name.
 Every change is written to `autosave.zmr` immediately for crash recovery.
 Use **File > Save project** or `Ctrl+S` to write the changes to the named
 project file; **Save project as** chooses a new named project file.
+Image paths are relative to each saved file, so keep the same relative
+locations when moving a project and its images. On Windows, an image on a
+different drive is saved with an absolute path.
 The window title displays `*` while changes are unsaved to the named project.
 Closing a modified project asks whether to **Save**, **Discard**, or **Cancel**;
 Cancel keeps the editor open, and Discard removes the recovery snapshot.

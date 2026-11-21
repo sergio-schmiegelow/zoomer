@@ -62,6 +62,13 @@ PREVIEW_INTERACTION_EVENTS = frozenset(
 )
 
 
+def _project_data_for_comparison(data, filename):
+    directory = Path(filename).resolve().parent
+    for entry in data["images_data"]:
+        entry["image"] = (directory / entry["image"]).resolve()
+    return data
+
+
 class _ProjectLoadJob(QThread):
     def __init__(self, filename, parent=None):
         super().__init__(parent)
@@ -1366,8 +1373,10 @@ def main(argv=None) -> int:
                 recovery_json = json.load(recovery_file)
             with last_project_path.open("r", encoding="utf-8") as project_file:
                 project_json = json.load(project_file)
-            recovery_matches_saved_project = recovery_json == project_json
-        except (OSError, json.JSONDecodeError):
+            recovery_matches_saved_project = _project_data_for_comparison(
+                recovery_json, recovery_path
+            ) == _project_data_for_comparison(project_json, last_project_path)
+        except (OSError, ValueError, KeyError, TypeError):
             recovery_matches_saved_project = False
     if recovery_matches_saved_project:
         recovery_path.unlink(missing_ok=True)

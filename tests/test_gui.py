@@ -1,4 +1,5 @@
 import json
+import shutil
 import time
 from pathlib import Path
 from threading import Event
@@ -277,6 +278,29 @@ class TestProjects:
         assert (tmp_path / "copy.zmr").exists()
         assert window.windowTitle() == f"Zoomer {__version__} - copy"
 
+    def test_save_as_and_autosave_use_their_own_directories(
+        self, window, tmp_path, monkeypatch
+    ):
+        project_dir = tmp_path / "projects"
+        project_dir.mkdir()
+        recovery_dir = tmp_path / "recovery"
+        recovery_dir.mkdir()
+        window.recovery_path = recovery_dir / gui.AUTOSAVE_FILENAME
+        monkeypatch.setattr(
+            QFileDialog,
+            "getSaveFileName",
+            staticmethod(lambda *a, **k: (str(project_dir / "copy.zmr"), "")),
+        )
+        assert window.save_as()
+        for path in (project_dir / "copy.zmr", window.recovery_path):
+            saved = json.loads(path.read_text())
+            assert saved["images_data"][0]["image"] == "../image0.png"
+            loaded = load_project(str(path))
+            assert (
+                loaded["images_data"][0]["image"].get_image_path()
+                == (tmp_path / "image0.png").resolve()
+            )
+
     def test_save_as_cannot_overwrite_recovery_file(
         self, window, tmp_path, monkeypatch, no_dialogs
     ):
@@ -443,12 +467,19 @@ class TestMain:
         assert observed["angle"] != 0
         assert QApplication.activeModalWidget() is None
 
+    @pytest.mark.parametrize("separate_directories", [False, True])
     def test_skips_recovery_prompt_when_autosave_matches_named_project(
-        self, qapp, tmp_path, proj_file, monkeypatch
+        self, qapp, tmp_path, proj_file, monkeypatch, separate_directories
     ):
-        cfg_path = tmp_path / "zoomer.cfg"
-        recovery_path = tmp_path / gui.AUTOSAVE_FILENAME
-        recovery_path.write_text(proj_file.read_text())
+        cfg_dir = tmp_path / "config" if separate_directories else tmp_path
+        cfg_dir.mkdir(exist_ok=True)
+        cfg_path = cfg_dir / "zoomer.cfg"
+        recovery_path = cfg_dir / gui.AUTOSAVE_FILENAME
+        save_project(str(recovery_path), load_project(str(proj_file)))
+        if separate_directories:
+            assert json.loads(recovery_path.read_text()) != json.loads(
+                proj_file.read_text()
+            )
         cfg_path.write_text(
             json.dumps(
                 {
@@ -474,9 +505,15 @@ class TestMain:
         monkeypatch.setattr(QApplication, "exec", lambda _app: 0)
 
         assert gui.main(["--config", str(cfg_path)]) == 0
-        assert json.loads(recovery_path.read_text()) == json.loads(
-            proj_file.read_text()
-        )
+        recovered = load_project(str(recovery_path))
+        original = load_project(str(proj_file))
+        assert [
+            entry["image"].get_image_path()
+            for entry in recovered["images_data"]
+        ] == [
+            entry["image"].get_image_path()
+            for entry in original["images_data"]
+        ]
         assert observed["window"].proj_filename == str(proj_file)
         assert (
             observed["window"].windowTitle() == f"Zoomer {__version__} - Demo"
@@ -522,6 +559,41 @@ class TestMain:
             recovered_window.proj_data["project_name"] == "Recovered changes"
         )
         assert recovered_window._project_modified
+
+    def test_offers_recovery_for_same_paths_pointing_to_different_images(
+        self, qapp, tmp_path, proj_file, monkeypatch
+    ):
+        cfg_dir = tmp_path / "config"
+        cfg_dir.mkdir()
+        recovery_path = cfg_dir / gui.AUTOSAVE_FILENAME
+        recovery_path.write_text(proj_file.read_text())
+        for index in range(3):
+            shutil.copyfile(
+                tmp_path / f"image{index}.png",
+                cfg_dir / f"image{index}.png",
+            )
+        cfg_path = cfg_dir / "zoomer.cfg"
+        cfg_path.write_text(
+            json.dumps(
+                {
+                    "auto_open_last_project": True,
+                    "last_project": str(proj_file),
+                }
+            )
+        )
+        prompts = []
+
+        def decline_recovery(*args):
+            prompts.append(args)
+            return QMessageBox.StandardButton.No
+
+        monkeypatch.setattr(
+            QMessageBox, "question", staticmethod(decline_recovery)
+        )
+        monkeypatch.setattr(QApplication, "exec", lambda _app: 0)
+        assert gui.main(["--config", str(cfg_path)]) == 0
+        assert len(prompts) == 1
+        assert prompts[0][1] == "Recover autosave"
 
     def test_declining_recovery_discards_autosave(
         self, qapp, tmp_path, proj_file, monkeypatch

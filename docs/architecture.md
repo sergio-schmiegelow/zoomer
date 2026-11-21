@@ -16,7 +16,7 @@ objects it is given); `backend` imports neither.
 | Item | Role |
 | --- | --- |
 | `ImageClass` | Image file wrapper: OpenCV pixels plus a cache slot for the Qt image |
-| `load_project` / `save_project` | Read and write `.zmr` files; `save_project` converts `ImageClass` objects to paths without mutating the input |
+| `load_project` / `save_project` | Read and write `.zmr` files; image paths are relative to the file when possible, and saving does not mutate the input |
 | `create_blended_frame` | Renders the cross-fade of image `index` and `index + 1` for a `size_alpha` and `blend_alpha` |
 | `auto_align_images` | Crops both frames, matches SIFT features and stores the three best matches as the pair's markers |
 | `get_blend_alpha_range` / `get_pair_blend_alpha_range` | Scan `size_alpha` and return a mask of where both images fill the video frame (the recommended alpha range) |
@@ -77,7 +77,9 @@ the project dirty.
 
 At startup, an existing recovery file is offered to the user before the last
 named project is auto-opened. A recovered project has no active named path;
-Save routes to Save As until the user chooses one.
+Save routes to Save As until the user chooses one. To detect an unchanged
+recovery file, image paths in both files are resolved relative to their own
+folders before comparing the project data.
 
 Opening, auto-opening and recovering projects use `_ProjectLoadJob` to load
 the project and images off the GUI thread. A modal loading banner uses the
