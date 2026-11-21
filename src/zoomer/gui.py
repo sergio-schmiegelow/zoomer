@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMessageBox,
+    QDoubleSpinBox,
     QSpinBox,
     QSplitter,
     QVBoxLayout,
@@ -28,6 +29,7 @@ from .backend import (
     ImageClass,
     VideoGenerator,
     auto_align_images,
+    calculate_pair_correlation,
     create_blended_frame,
     get_pair_blend_alpha_range,
     get_supported_video_formats,
@@ -106,12 +108,17 @@ class _AlignmentJob(QThread):
         super().__init__(parent)
         self.proj_data = proj_data
         self.aligned = False
+        self.correlation = None
         self.error = None
         self.cancelled = False
 
     def run(self):
         try:
             self.aligned = bool(auto_align_images(self.proj_data, 0))
+            if self.aligned:
+                self.correlation = calculate_pair_correlation(
+                    self.proj_data, 0
+                )
         except Exception as error:
             self.error = error
 
@@ -158,6 +165,7 @@ CFG_DEFAULTS = {
     "frame_crosshair": True,
     "marker_thickness": 2,
     "auto_alpha_range": True,
+    "correlation_threshold": 0.2,
     "auto_open_last_project": False,
     "last_project": "",
 }
@@ -297,6 +305,25 @@ class MainApp(QMainWindow):
             self.cfg_marker_thickness_spin
         )
         options_menu.addAction(marker_thickness_action)
+        correlation_threshold_action = QWidgetAction(self)
+        self.cfg_correlation_threshold_spin = QDoubleSpinBox(options_menu)
+        self.cfg_correlation_threshold_spin.setRange(0.0, 1.0)
+        self.cfg_correlation_threshold_spin.setSingleStep(0.05)
+        self.cfg_correlation_threshold_spin.setDecimals(2)
+        self.cfg_correlation_threshold_spin.setPrefix("Correlation threshold: ")
+        self.cfg_correlation_threshold_spin.setToolTip(
+            "Correlation threshold for the auto alignment"
+        )
+        self.cfg_correlation_threshold_spin.setValue(
+            max(0.0, min(1.0, float(self.cfg_data["correlation_threshold"])))
+        )
+        correlation_threshold_action.setDefaultWidget(
+            self.cfg_correlation_threshold_spin
+        )
+        options_menu.addAction(correlation_threshold_action)
+        self.cfg_correlation_threshold_spin.valueChanged.connect(
+            self._set_correlation_threshold
+        )
         self.cfg_marker_thickness_spin.valueChanged.connect(
             self._set_marker_thickness
         )
@@ -781,6 +808,10 @@ class MainApp(QMainWindow):
             self.image_fusion_editor.set_auto_alpha_range(enabled)
             self._update_recommended_alpha_range()
 
+    def _set_correlation_threshold(self, threshold):
+        self.cfg_data["correlation_threshold"] = float(threshold)
+        self._save_cfg()
+
     def _set_marker_thickness(self, thickness):
         thickness = max(1, min(10, int(thickness)))
         self.cfg_data["marker_thickness"] = thickness
@@ -842,6 +873,22 @@ class MainApp(QMainWindow):
                 self,
                 "Find alignment points",
                 "Unable to find alignment points.",
+            )
+        elif (
+            job.correlation is not None
+            and job.correlation < self.cfg_correlation_threshold_spin.value()
+        ):
+            QMessageBox.warning(
+                self,
+                "Find alignment points",
+                "It seems the auto alignment didn't work.\n"
+                f"The images correlation is too low ({job.correlation:.2f}).\n"
+                "\nSuggestions:\n"
+                "- Temporarily resize both frames to about the same area "
+                "and try again.\n"
+                "- Reduce the Correlation threshold in the Options menu.\n"
+                "- Perform the alignment manually by dragging the crosses "
+                "in the images.",
             )
         elif still_valid:
             self._edit_burst_timer.stop()

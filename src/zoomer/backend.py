@@ -572,6 +572,58 @@ def _calculate_frames_correlation(
 
 
 # -------------------------------------------------------------------------
+def _central_valid_size_alpha(proj_data: dict, index: int) -> float:
+    # Center of the largest contiguous range where both images fill the
+    # video frame; 0.5 when there is no such range.
+    test_points, mask = get_pair_blend_alpha_range(proj_data, index)
+    best_start, best_length, start = 0, 0, None
+    for i in range(len(mask) + 1):
+        valid = i < len(mask) and bool(mask[i])
+        if valid and start is None:
+            start = i
+        elif not valid and start is not None:
+            if i - start > best_length:
+                best_start, best_length = start, i - start
+            start = None
+    if best_length == 0:
+        return 0.5
+    return float(
+        (test_points[best_start] + test_points[best_start + best_length - 1])
+        / 2
+    )
+
+
+# -------------------------------------------------------------------------
+def calculate_pair_correlation(
+    proj_data: dict, index: int = 0, size_alpha: float | None = None
+) -> float:
+    # Correlation between the two images transformed to the same
+    # intermediate frame, at the center of the valid alpha range (0.5 if
+    # none). NaN (e.g. flat channels) is reported as 0.
+    if size_alpha is None:
+        size_alpha = _central_valid_size_alpha(proj_data, index)
+    video_size = np.array(proj_data["video_data"]["size"], dtype=np.int32)
+    entry0 = proj_data["images_data"][index]
+    entry1 = proj_data["images_data"][index + 1]
+    img0 = entry0["image"].get_cv_image()
+    img1 = entry1["image"].get_cv_image()
+    points0 = np.array(entry0["next_points"], dtype=np.float32)
+    frame0 = np.array(entry0["frame"], dtype=np.float32)
+    points1 = np.array(entry1["prev_points"], dtype=np.float32)
+    frame1 = np.array(entry1["frame"], dtype=np.float32)
+    intermediate0 = _create_intermediate_frame(
+        video_size, img0, points0, frame0, points1, frame1, size_alpha
+    )
+    intermediate1 = _create_intermediate_frame(
+        video_size, img1, points1, frame1, points0, frame0, 1 - size_alpha
+    )
+    correlation = float(
+        _calculate_frames_correlation(intermediate0, intermediate1)
+    )
+    return 0.0 if np.isnan(correlation) else correlation
+
+
+# -------------------------------------------------------------------------
 def auto_align_images(
     proj_data: dict, index: int, use_only_frame=True
 ) -> np.ndarray:
