@@ -1,5 +1,9 @@
 # Zoomer 0.1
 
+![Zoomer video thumbnail](docs/trunk.webp)
+
+(*Higher resolution at https://www.youtube.com/watch?v=pw3hKkmbQ-Y*)
+
 Zoomer builds "infinite zoom" videos from a series of images. For each pair
 of consecutive images you mark the same three features in both pictures and
 choose the video frame (crop) for each image. Zoomer scales and blends the
