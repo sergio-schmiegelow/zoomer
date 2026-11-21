@@ -4,7 +4,7 @@
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 ```
 
@@ -23,6 +23,23 @@ in a temporary directory), so no sample data is needed.
 | `tests/test_backend.py` | `ImageClass`, project I/O, interpolation, zoom chain, video generation, SIFT alignment |
 | `tests/test_widgets.py` | Marker editor interaction, sliders, image list, video preview controls, settings dialog, scrubber recovery after export |
 | `tests/test_gui.py` | Projects, preferences, start-up, undo/redo, video preview, background alignment, export success and interruption |
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs `ruff check .` and `pytest` on Ubuntu,
+Windows and macOS with Python 3.10 and 3.12 for every push and pull request.
+On Linux it installs the system libraries Qt needs (`libegl1`, `libgl1`,
+`libglib2.0-0`, `libxkbcommon0`, `libdbus-1-3`, `libfontconfig1`).
+
+Guidelines for cross-platform code:
+
+- Use `pathlib` and never hard-code separators; resolve paths before
+  comparing them (macOS temp folders are symlinks).
+- Close files and video writers before deleting or replacing them (Windows
+  locks open files).
+- Do not assume a specific video codec; use `get_supported_video_formats()`.
+- Read images through `ImageClass` (it uses `cv.imdecode`, which works with
+  non-ASCII Windows paths).
 
 ## Style
 

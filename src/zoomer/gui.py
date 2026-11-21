@@ -11,13 +11,13 @@ from PyQt6.QtGui import QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
+    QDoubleSpinBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QMessageBox,
-    QDoubleSpinBox,
     QSpinBox,
     QSplitter,
     QVBoxLayout,
@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
     QWidgetAction,
 )
 
+from . import __version__
 from .backend import (
     ImageClass,
     VideoGenerator,
@@ -221,7 +222,7 @@ class MainApp(QMainWindow):
         self._edit_burst_timer = QTimer(self)
         self._edit_burst_timer.setSingleShot(True)
         self._edit_burst_timer.setInterval(600)
-        self.setWindowTitle("Zoomer")
+        self.setWindowTitle(f"Zoomer {__version__}")
         self._create_menus()
         self._update_window_title()
         self._save_cfg()
@@ -310,7 +311,9 @@ class MainApp(QMainWindow):
         self.cfg_correlation_threshold_spin.setRange(0.0, 1.0)
         self.cfg_correlation_threshold_spin.setSingleStep(0.05)
         self.cfg_correlation_threshold_spin.setDecimals(2)
-        self.cfg_correlation_threshold_spin.setPrefix("Correlation threshold: ")
+        self.cfg_correlation_threshold_spin.setPrefix(
+            "Correlation threshold: "
+        )
         self.cfg_correlation_threshold_spin.setToolTip(
             "Correlation threshold for the auto alignment"
         )
@@ -385,9 +388,9 @@ class MainApp(QMainWindow):
         if self._project_modified:
             project_name = f"{project_name or 'No project'} *"
         self.setWindowTitle(
-            f"Zoomer - {project_name}"
+            f"Zoomer {__version__} - {project_name}"
             if project_name
-            else "Zoomer - No project"
+            else f"Zoomer {__version__} - No project"
         )
 
     def _set_project_modified(self, modified):
@@ -738,6 +741,9 @@ class MainApp(QMainWindow):
         self.image_fusion_editor.alpha_range_edited.connect(
             self._alpha_range_edited
         )
+        self.image_fusion_editor.alpha_range_auto_set.connect(
+            self._alpha_range_auto_set
+        )
         self.image_fusion_editor.alignment_points_requested.connect(
             self._run_auto_alignment
         )
@@ -750,9 +756,7 @@ class MainApp(QMainWindow):
         self._fusion_preview_timer = QTimer(self)
         self._fusion_preview_timer.setSingleShot(True)
         self._fusion_preview_timer.setInterval(75)
-        self._fusion_preview_timer.timeout.connect(
-            self._refresh_fusion_editor
-        )
+        self._fusion_preview_timer.timeout.connect(self._refresh_fusion_editor)
         self.workspace_splitter.addWidget(self.image_fusion_edition_area)
         self.setCentralWidget(self.workspace_splitter)
         paths = [self._path_for_entry(entry) for entry in proj_image_entries]
@@ -1200,6 +1204,15 @@ class MainApp(QMainWindow):
         self.image_files_and_preview_area.preview_area.set_fusion_frame(
             frame, keep_view=keep_view
         )
+
+    def _alpha_range_auto_set(self, pair_index, alpha_range):
+        # Derived value: it is kept in memory only, so it neither enters the
+        # undo history, rewrites the autosave nor marks the project modified.
+        # The next real edit or save persists it.
+        if not 0 <= pair_index < len(self.proj_image_entries):
+            return
+        self.proj_image_entries[pair_index]["alpha_range"] = list(alpha_range)
+        self._schedule_video_preview()
 
     def _alpha_range_edited(self, pair_index, alpha_range):
         if not 0 <= pair_index < len(self.proj_image_entries):

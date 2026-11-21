@@ -1,4 +1,4 @@
-# Zoomer
+# Zoomer 0.1
 
 Zoomer builds "infinite zoom" videos from a series of images. For each pair
 of consecutive images you mark the same three features in both pictures and
@@ -52,11 +52,13 @@ chains all the pairs into a single video.
 
 ## Installation
 
-Python 3.10 or newer is required.
+Python 3.10 or newer is required. Zoomer runs on **Linux, Windows and
+macOS**; every push is tested on all three by GitHub Actions
+(`.github/workflows/ci.yml`).
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e .            # runtime dependencies: PyQt6, numpy, opencv-python
 pip install -e ".[dev]"     # adds pytest and ruff for development
 ```
@@ -68,6 +70,15 @@ zoomer                      # console script installed by pip
 python -m zoomer            # equivalent
 zoomer --config ~/zoomer.cfg
 ```
+
+Platform notes:
+
+- Video formats depend on the codecs bundled with the installed OpenCV build,
+  which differ per OS; the video settings only list formats that work on your
+  machine.
+- Linux may need system Qt libraries (for example `libegl1`, `libxkbcommon0`
+  and `libgl1`) if the Qt platform plugin fails to load.
+- Image paths with non-ASCII characters are supported on every platform.
 
 The application config defaults to `./zoomer.cfg` (the current directory).
 If no project is opened automatically, the **New project** dialog appears.

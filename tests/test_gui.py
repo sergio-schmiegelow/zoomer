@@ -11,7 +11,7 @@ from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from conftest import triangle
-from zoomer import gui, widgets
+from zoomer import __version__, gui, widgets
 from zoomer.backend import (
     ImageClass,
     get_supported_video_formats,
@@ -75,7 +75,7 @@ class TestProjects:
         assert recovered["project_name"] == "Fresh"
         assert saved["video_data"]["size"] == [640, 360]
         assert saved["images_data"] == []
-        assert window.windowTitle() == "Zoomer - Fresh"
+        assert window.windowTitle() == f"Zoomer {__version__} - Fresh"
 
     def test_new_project_rejects_path_separators(
         self, window, tmp_path, monkeypatch, no_dialogs
@@ -174,7 +174,7 @@ class TestProjects:
         )
         window.save_as()
         assert (tmp_path / "copy.zmr").exists()
-        assert window.windowTitle() == "Zoomer - copy"
+        assert window.windowTitle() == f"Zoomer {__version__} - copy"
 
     def test_save_as_cannot_overwrite_recovery_file(
         self, window, tmp_path, monkeypatch, no_dialogs
@@ -287,7 +287,7 @@ class TestCfgOptions:
         assert main.cfg_frame_crosshair_action.isChecked()
         assert main.cfg_marker_thickness_spin.value() == 2
         assert not main.cfg_auto_open_last_project_action.isChecked()
-        assert main.windowTitle() == "Zoomer - No project"
+        assert main.windowTitle() == f"Zoomer {__version__} - No project"
 
 
 class TestMain:
@@ -377,7 +377,9 @@ class TestMain:
             proj_file.read_text()
         )
         assert observed["window"].proj_filename == str(proj_file)
-        assert observed["window"].windowTitle() == "Zoomer - Demo"
+        assert (
+            observed["window"].windowTitle() == f"Zoomer {__version__} - Demo"
+        )
 
     def test_offers_recovery_when_autosave_differs_from_named_project(
         self, qapp, tmp_path, proj_file, monkeypatch
@@ -519,7 +521,7 @@ class TestMain:
         monkeypatch.setattr(gui, "MainApp", Capture)
         monkeypatch.setattr(QApplication, "exec", fake_exec)
         assert gui.main(["--config", str(cfg)]) == 0
-        assert observed["title"] == "Zoomer - Demo"
+        assert observed["title"] == f"Zoomer {__version__} - Demo"
         assert observed["entries"] == 3
         assert observed["crosshair"] is False
 
@@ -1034,8 +1036,26 @@ class TestAlignment:
         )
         return True
 
+    def test_low_correlation_result_is_rejected(
+        self, window, monkeypatch, no_dialogs
+    ):
+        monkeypatch.setattr(gui, "auto_align_images", self.fake_alignment)
+        monkeypatch.setattr(
+            gui, "calculate_pair_correlation", lambda *_args: 0.1
+        )
+        window.cfg_correlation_threshold_spin.setValue(0.5)
+        before = [list(p) for p in window.proj_image_entries[0]["next_points"]]
+        window.image_fusion_editor.find_alignment_button.click()
+        QTest.qWait(400)
+        assert window.proj_image_entries[0]["next_points"] == before
+        assert not window._undo_stack
+        assert "too low (0.10)" in no_dialogs[-1][1]
+
     def test_result_is_applied_as_plain_lists(self, window, monkeypatch):
         monkeypatch.setattr(gui, "auto_align_images", self.fake_alignment)
+        monkeypatch.setattr(
+            gui, "calculate_pair_correlation", lambda *_args: 1.0
+        )
         window.image_fusion_editor.find_alignment_button.click()
         QTest.qWait(400)
         entries = window.proj_image_entries

@@ -67,6 +67,9 @@ class TestProjectFiles:
         assert loaded["images_data"][0]["prev_points"] is None
 
 
+VIDEO_SIZE = np.array([160, 90], dtype=np.int32)
+
+
 class TestInterpolation:
     def setup_method(self):
         self.p0 = np.array(triangle(10.0), dtype=np.float32)
@@ -74,19 +77,27 @@ class TestInterpolation:
 
     @pytest.mark.parametrize("method", ["linear", "log"])
     def test_endpoints(self, method):
-        start = backend._interpolate_points(self.p0, self.p1, 0.0, method)
-        end = backend._interpolate_points(self.p0, self.p1, 1.0, method)
+        start = backend._interpolate_points(
+            self.p0, self.p1, VIDEO_SIZE, 0.0, method
+        )
+        end = backend._interpolate_points(
+            self.p0, self.p1, VIDEO_SIZE, 1.0, method
+        )
         assert np.allclose(start, self.p0)
         assert np.allclose(end, self.p1)
 
     def test_log_midpoint_is_geometric_in_size(self):
-        middle = backend._interpolate_points(self.p0, self.p1, 0.5, "log")
+        middle = backend._interpolate_points(
+            self.p0, self.p1, VIDEO_SIZE, 0.5, "log"
+        )
         ratio = backend._points_mean_size_ratio(self.p0, middle)
         assert ratio == pytest.approx(2**0.5, rel=1e-4)
 
     def test_unknown_method_raises(self):
         with pytest.raises(ValueError, match="Unknown interpolation"):
-            backend._interpolate_points(self.p0, self.p1, 0.5, "cubic")
+            backend._interpolate_points(
+                self.p0, self.p1, VIDEO_SIZE, 0.5, "cubic"
+            )
 
 
 def test_points_mean_size_ratio():

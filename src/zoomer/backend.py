@@ -1,12 +1,11 @@
 import json
 import tempfile
 from functools import lru_cache
+from itertools import combinations
 from pathlib import Path
 
 import cv2 as cv
 import numpy as np
-import time
-from itertools import combinations
 
 NUM_FRAMES = 100
 CROSS_SIZE = 10
@@ -72,9 +71,10 @@ def _probe_video_format(extension: str, fourcc_options: tuple[str, ...]):
                     25,
                     (32, 32),
                 )
-                if not writer.isOpened():
-                    continue
-                writer.write(np.zeros((32, 32, 3), dtype=np.uint8))
+                if writer.isOpened():
+                    writer.write(np.zeros((32, 32, 3), dtype=np.uint8))
+                # Release before the directory is removed: Windows cannot
+                # delete files that are still open.
                 writer.release()
                 writer = None
                 if filename.is_file() and filename.stat().st_size > 0:
@@ -106,7 +106,13 @@ class ImageClass:
         if not self._image_path.exists():
             raise ValueError(f"Image file does not exist: {filename}")
         self._image_path = self._image_path.resolve()
-        self._cv_image = cv.imread(str(self._image_path))
+        # imdecode (unlike imread) handles non-ASCII paths on Windows and
+        # applies the same EXIF orientation.
+        try:
+            data = np.fromfile(self._image_path, dtype=np.uint8)
+            self._cv_image = cv.imdecode(data, cv.IMREAD_COLOR)
+        except OSError:
+            self._cv_image = None
         self._qt_image = None
 
     # ---------------------------------------------------------------------
@@ -309,6 +315,7 @@ def _extract_video_frame_from_image(
     )
     return video_frame
 
+
 # -------------------------------------------------------------------------
 def _points_mean_size(points: np.ndarray) -> float:
     # Calculate the mean of the distances between all the points
@@ -320,6 +327,7 @@ def _points_mean_size(points: np.ndarray) -> float:
 
     return np.mean(distances)
 
+
 # -------------------------------------------------------------------------
 def _points_mean_size_ratio(points0: np.ndarray, points1: np.ndarray) -> float:
     # Calculate the ratio of the mean sizes of two triangles formed by three
@@ -327,6 +335,7 @@ def _points_mean_size_ratio(points0: np.ndarray, points1: np.ndarray) -> float:
     mean_size0 = _points_mean_size(points0)
     mean_size1 = _points_mean_size(points1)
     return mean_size1 / mean_size0 if mean_size0 != 0 else float("inf")
+
 
 # -------------------------------------------------------------------------
 def _points_mean_rotation(points0: np.ndarray, points1: np.ndarray) -> float:
@@ -337,40 +346,53 @@ def _points_mean_rotation(points0: np.ndarray, points1: np.ndarray) -> float:
     ratios_vector = []
     for idx0 in range(num_points):
         for idx1 in range(idx0 + 1, num_points):
-            cpx0 = points0[idx0][0] - points0[idx1][0] + 1j * (points0[idx0][1] - points0[idx1][1])
-            cpx1 = points1[idx0][0] - points1[idx1][0] + 1j * (points1[idx0][1] - points1[idx1][1])
-            #print(f"DEBUG angle(cpx0): {np.angle(cpx0) / np.pi * 180}, angle(cpx1): {np.angle(cpx1) / np.pi * 180}")
-            #Normalize the complex numbers to get the rotation
+            cpx0 = (
+                points0[idx0][0]
+                - points0[idx1][0]
+                + 1j * (points0[idx0][1] - points0[idx1][1])
+            )
+            cpx1 = (
+                points1[idx0][0]
+                - points1[idx1][0]
+                + 1j * (points1[idx0][1] - points1[idx1][1])
+            )
+            # Normalize the complex numbers to get the rotation
             cpx0 /= np.abs(cpx0)
             cpx1 /= np.abs(cpx1)
-            cpx_ratio = (cpx0 / cpx1)
-            #print(f"DEBUG angle(cpx_ratio): {np.angle(cpx_ratio) / np.pi * 180}")
+            cpx_ratio = cpx0 / cpx1
             ratios_vector.append(cpx_ratio)
     mean_diff = np.mean(ratios_vector)
     mean_diff_angle = np.angle(mean_diff)
-    #print(f"Mean angle: {mean_diff_angle / np.pi * 180}")
+    # print(f"Mean angle: {mean_diff_angle / np.pi * 180}")
     return mean_diff_angle
+
 
 # -------------------------------------------------------------------------
 def _rotate_points(points, angle):
-    rotation_matrix = np.array([
-        [np.cos(angle), -np.sin(angle)],
-        [np.sin(angle), np.cos(angle)]
-    ])
+    rotation_matrix = np.array(
+        [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+    )
     return points @ rotation_matrix.T
 
+
 # -------------------------------------------------------------------------
-def _interpolate_points_by_decomposition(points0: np.ndarray, points1: np.ndarray, video_size: np.ndarray, step: float, log_scale = True):
-    #Split the transformation into scale, rotation, and translation components
-    scale =    _points_mean_size_ratio(points0, points1)
+def _interpolate_points_by_decomposition(
+    points0: np.ndarray,
+    points1: np.ndarray,
+    video_size: np.ndarray,
+    step: float,
+    log_scale=True,
+):
+    # Split the transformation into scale, rotation, and translation components
+    scale = _points_mean_size_ratio(points0, points1)
     rotation = _points_mean_rotation(points0, points1)
 
-    #The center of rotation is the center of the video frame
+    # The center of rotation is the center of the video frame
     rot_center = video_size / 2
-    
+
     zero_centered_points0 = points0 - rot_center
 
-    #Calculate the residual by doing the inverse transformation on points1
+    # Calculate the residual by doing the inverse transformation on points1
     zero_centered_points1 = points1 - rot_center
     rotated_points1 = _rotate_points(zero_centered_points1, -rotation)
     scaled_points1 = rotated_points1 / scale
@@ -382,7 +404,9 @@ def _interpolate_points_by_decomposition(points0: np.ndarray, points1: np.ndarra
     else:
         step_scale = (scale - 1) * step + 1
     step_residual = residual * step
-    rotated_points0 = _rotate_points(zero_centered_points0 + step_residual, step_angle)
+    rotated_points0 = _rotate_points(
+        zero_centered_points0 + step_residual, step_angle
+    )
     rotated_zoomed_points0 = rotated_points0 * step_scale
     return rotated_zoomed_points0 + rot_center
 
@@ -396,9 +420,13 @@ def _interpolate_points(
     interpolation_method: str = "log",
 ) -> np.ndarray:
     if interpolation_method == "linear":
-        return _interpolate_points_by_decomposition(points0, points1, video_size, alpha, False)
+        return _interpolate_points_by_decomposition(
+            points0, points1, video_size, alpha, False
+        )
     elif interpolation_method == "log":
-        return _interpolate_points_by_decomposition(points0, points1, video_size, alpha, True)
+        return _interpolate_points_by_decomposition(
+            points0, points1, video_size, alpha, True
+        )
     else:
         raise ValueError(
             f"Unknown interpolation method: {interpolation_method}"
@@ -498,6 +526,7 @@ def get_pair_blend_alpha_range(proj_data: dict, index: int) -> tuple:
         np.array(images_data[index + 1]["prev_points"], dtype=np.float32),
         np.array(images_data[index + 1]["frame"], dtype=np.float32),
     )
+
 
 # -------------------------------------------------------------------------
 def create_blended_frame(
@@ -657,37 +686,50 @@ def auto_align_images(
 
 # -------------------------------------------------------------------------
 def select_alingment_points(matches, kp0, kp1, num_points, n_best):
-    start = time.time()
     matches = sorted(matches, key=lambda x: x[0].distance)
     selected_matches = matches[:n_best]
     if len(selected_matches) < num_points:
         return None, "Not enough matches to select alignment points"
     indexes = list(range(len(selected_matches)))
     indexes_combinations = list(combinations(indexes, num_points))
-    #Create one transformation for each combination of matches
+    # Create one transformation for each combination of matches
     transformations = []
     for combination in indexes_combinations:
-        img0_first_point  = kp0[matches[combination[0]][0].queryIdx].pt
-        img1_first_point  = kp1[matches[combination[0]][0].trainIdx].pt
+        img0_first_point = kp0[matches[combination[0]][0].queryIdx].pt
+        img1_first_point = kp1[matches[combination[0]][0].trainIdx].pt
         img0_second_point = kp0[matches[combination[1]][0].queryIdx].pt
         img1_second_point = kp1[matches[combination[1]][0].trainIdx].pt
-        img0_third_point  = kp0[matches[combination[2]][0].queryIdx].pt
-        img1_third_point  = kp1[matches[combination[2]][0].trainIdx].pt
-        affineTransform = cv.getAffineTransform(
-            np.array([img0_first_point, img0_second_point, img0_third_point], dtype=np.float32),
-            np.array([img1_first_point, img1_second_point, img1_third_point], dtype=np.float32)
+        img0_third_point = kp0[matches[combination[2]][0].queryIdx].pt
+        img1_third_point = kp1[matches[combination[2]][0].trainIdx].pt
+        affine_transform = cv.getAffineTransform(
+            np.array(
+                [img0_first_point, img0_second_point, img0_third_point],
+                dtype=np.float32,
+            ),
+            np.array(
+                [img1_first_point, img1_second_point, img1_third_point],
+                dtype=np.float32,
+            ),
         )
-        transformations.append(affineTransform.flatten())
-    #Iterate over all combinations, removing the one that is furthest from the average transformation until only one combination remains
+        transformations.append(affine_transform.flatten())
+    # Drop the combination furthest from the average transformation
+    # until only one remains
     while len(indexes_combinations) > 1:
-        avg_transformation = np.mean([transformations[i] for i in range(len(indexes_combinations))], axis=0)
-        distances = [np.linalg.norm(transformations[i] - avg_transformation) for i in range(len(indexes_combinations))]
+        avg_transformation = np.mean(
+            [transformations[i] for i in range(len(indexes_combinations))],
+            axis=0,
+        )
+        distances = [
+            np.linalg.norm(transformations[i] - avg_transformation)
+            for i in range(len(indexes_combinations))
+        ]
         furthest_index = np.argmax(distances)
         del indexes_combinations[furthest_index]
         del transformations[furthest_index]
     best_combination = indexes_combinations[0]
-    #print(f"DEBUG - Time taken for select_alingment_points: {time.time() - start}")
-    return [kp0[matches[i][0].queryIdx].pt for i in best_combination], [kp1[matches[i][0].trainIdx].pt for i in best_combination]
+    return [kp0[matches[i][0].queryIdx].pt for i in best_combination], [
+        kp1[matches[i][0].trainIdx].pt for i in best_combination
+    ]
 
 
 # -------------------------------------------------------------------------
@@ -705,7 +747,6 @@ def sift_alignment(img0, img1) -> np.ndarray:
     if len(matches) < 3:
         print("DEBUG - Not enough matches found.")
         return None, None
-    #print(f"DEBUG - Total matches found: {len(matches)}")
     return select_alingment_points(matches, kp0, kp1, 3, 15)
 
 
@@ -727,7 +768,6 @@ def orb_alignment(img0, img1) -> np.ndarray:
     if len(matches) < 3:
         print("DEBUG - Not enough matches found.")
         return None, None
-    #print(f"DEBUG - Total matches found: {len(matches)}")
     matches = sorted(matches, key=lambda x: x.distance)
 
     img0_first_point = kp0[matches[0].queryIdx].pt
@@ -781,11 +821,14 @@ def _calculate_zoom_array(proj_data: dict) -> tuple:
         )
         current_zoom *= pair_ratio
         img_zooms.append(current_zoom)
-        #print(f"DEBUG - Pair ratio for images {i} and {i + 1}: {pair_ratio}")
-        #print(f"Zoom for image {i}:{current_zoom}")
-    # if img_zooms is not an full increasing or decreasing sequence, return error
-    if not (np.all(np.diff(img_zooms) >= 0) or np.all(np.diff(img_zooms) <= 0)):
-        error_msg = "Image zooms are not in full increasing or decreasing order"
+        # print(f"Zoom for image {i}:{current_zoom}")
+    # img_zooms must be fully increasing or decreasing
+    if not (
+        np.all(np.diff(img_zooms) >= 0) or np.all(np.diff(img_zooms) <= 0)
+    ):
+        error_msg = (
+            "Image zooms are not in full increasing or decreasing order"
+        )
         print(f"ERROR - {error_msg}")
         return None, error_msg
     img_zooms = np.array(img_zooms)
@@ -929,10 +972,16 @@ class VideoGenerator:
         blend_alpha_range = self.proj_data["images_data"][first_index].get(
             "alpha_range", (0.0, 1.0)
         )
-        blend_alpha = (size_alpha - blend_alpha_range[0]) / (
-            blend_alpha_range[1] - blend_alpha_range[0]
-        )
-        blend_alpha = np.clip(blend_alpha, 0.0, 1.0)
+        range_start, range_end = blend_alpha_range
+        if range_end <= range_start:
+            # Degenerate range: a hard cut at its position
+            blend_alpha = 0.0 if size_alpha <= range_start else 1.0
+        else:
+            blend_alpha = np.clip(
+                (size_alpha - range_start) / (range_end - range_start),
+                0.0,
+                1.0,
+            )
         return create_blended_frame(
             self.proj_data,
             index=first_index,
@@ -953,5 +1002,3 @@ class VideoGenerator:
             self.save_video_frame(video_frame)
         self.close_video_writer()
         return True, None
-
-

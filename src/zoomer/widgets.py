@@ -22,8 +22,8 @@ from PyQt6.QtGui import (
     QPixmap,
 )
 from PyQt6.QtWidgets import (
-    QCheckBox,
     QAbstractItemView,
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -1055,7 +1055,9 @@ class RecommendedRangeBar(QWidget):
         self.setFixedHeight(10)
 
     def set_mask(self, mask):
-        self._mask = [bool(value) for value in mask] if mask is not None else []
+        self._mask = (
+            [bool(value) for value in mask] if mask is not None else []
+        )
         self.update()
 
     def paintEvent(self, event):
@@ -1128,6 +1130,7 @@ class ImageFusionEditor(QWidget):
     alignment_points_requested = pyqtSignal(int)
     alignment_interrupted = pyqtSignal()
     auto_alpha_range_toggled = pyqtSignal(bool)
+    alpha_range_auto_set = pyqtSignal(int, object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1297,7 +1300,10 @@ class ImageFusionEditor(QWidget):
 
     def set_recommended_alpha_range(self, mask):
         self.recommended_range_bar.set_mask(mask)
-        if not self.auto_alpha_range or not self.alpha_range_slider.isEnabled():
+        if (
+            not self.auto_alpha_range
+            or not self.alpha_range_slider.isEnabled()
+        ):
             return
         lower, upper = 0, 100
         best_start, best_length, start = 0, 0, None
@@ -1316,7 +1322,11 @@ class ImageFusionEditor(QWidget):
             upper = round(100 * (best_start + best_length - 1) / last)
         if (lower, upper) != self.alpha_range_slider.values:
             self.alpha_range_slider.set_values(lower, upper)
-            self._alpha_range_changed(lower, upper)
+            self.alpha_range_value.setText(f"{lower}% - {upper}%")
+            self.alpha_range_auto_set.emit(
+                self.pair_index, [lower / 100, upper / 100]
+            )
+            self._emit_fusion_preview_request()
 
     def refresh_fusion_preview(self):
         self._emit_fusion_preview_request()
@@ -1628,8 +1638,7 @@ class VideoSettingsWidget(QWidget):
             ),
             (
                 self.pause_before_spin,
-                "Time the video holds the first image before the zoom "
-                "starts.",
+                "Time the video holds the first image before the zoom starts.",
             ),
             (
                 self.duration_spin,

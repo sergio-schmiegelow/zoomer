@@ -426,7 +426,6 @@ class TestVideoSettingsDialog:
             "pause_before": 1.25,
             "duration": 5,
             "pause_after": 2.5,
-            "interpolation_method": "linear",
         }
         settings = widgets.VideoSettingsDialog(data).settings()
         assert settings == {
@@ -436,7 +435,6 @@ class TestVideoSettingsDialog:
             "pause_before": 1.25,
             "duration": 5.0,
             "pause_after": 2.5,
-            "interpolation_method": "linear",
         }
 
     def test_existing_settings_default_to_no_pauses(self, qapp):
