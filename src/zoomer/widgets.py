@@ -235,6 +235,16 @@ def _array_to_qimage(cv_image):
 
 
 class ImageFilesOrganizer(QWidget):
+    HELP_TEXT = (
+        "These are the image files used to create the zoom.\n"
+        "The time sequence is top to bottom.\n"
+        "Click Add files to select new files, or drag them to this box.\n"
+        "Drag and drop to change the order.\n"
+        "Press Del to remove the selected file.\n"
+        "The selected file and the other one in bold are the pair shown in "
+        "the image fusion editor."
+    )
+
     selected_image_changed = pyqtSignal(str)
     image_files_changed = pyqtSignal(list)
 
@@ -245,6 +255,9 @@ class ImageFilesOrganizer(QWidget):
         self.add_files_button = QPushButton("Add files")
         self.image_list = _ImageFileListWidget(self)
         self.image_list.currentRowChanged.connect(self._selection_changed)
+        self.setToolTip(self.HELP_TEXT)
+        self.add_files_button.setToolTip(self.HELP_TEXT)
+        self.image_list.setToolTip(self.HELP_TEXT)
         layout.addWidget(self.add_files_button)
         layout.addWidget(self.image_list)
         self.add_files_button.clicked.connect(self.open_add_files_dialog)
@@ -274,7 +287,7 @@ class ImageFilesOrganizer(QWidget):
                 continue
             item = QListWidgetItem(path.name)
             item.setData(Qt.ItemDataRole.UserRole, path_text)
-            item.setToolTip(path_text)
+            item.setToolTip(f"{path_text}\n\n{self.HELP_TEXT}")
             self.image_list.addItem(item)
             known_paths.add(path_text)
             added_items.append(item)
