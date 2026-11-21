@@ -4,7 +4,9 @@
 
 A JSON document. Images are stored by path and are loaded into
 `zoomer.backend.ImageClass` objects when the project is opened. Saving always
-writes absolute image paths.
+writes absolute image paths. Relative image paths are resolved against the
+folder of the project file when it is opened, which makes the bundled
+`project_examples/trunk_example/trunk_example.zmr` portable.
 
 ```json
 {
@@ -38,7 +40,7 @@ writes absolute image paths.
 | `video_data.pause_before` | Seconds to hold the first zoom frame (default `0`) |
 | `video_data.duration` | Zooming duration in seconds (existing projects retain this value) |
 | `video_data.pause_after` | Seconds to hold the last zoom frame (default `0`) |
-| `video_data.interpolation_method` | `"log"` (default) or `"linear"` marker interpolation |
+| `video_data.interpolation_method` | Ignored for now: interpolation is always logarithmic |
 | `video_data.format` | Output container extension, selected from formats probed by the active OpenCV installation (default `"avi"`) |
 | `images_data[].image` | Image path |
 | `images_data[].frame` | `[[x0, y0], [x1, y1]]` crop in image pixels, with the video aspect ratio |
@@ -46,9 +48,8 @@ writes absolute image paths.
 | `images_data[].prev_points` | Three markers matched with the previous image; `null` on the first image |
 | `images_data[].alpha_range` | Optional `[start, end]` in `0..1` (default `[0.0, 1.0]`) stored on the first image of a pair |
 
-A relative image path is resolved against the current working directory
-when the project is opened, so keep paths absolute (as saved) or open
-projects from the directory they were written for.
+Saving writes absolute paths, so re-saving a project that uses relative
+paths (such as the example) converts them.
 
 Each duration is converted separately to a whole number of frames by
 truncating `FPS * seconds`. Preview and export include the two pauses.
@@ -59,6 +60,8 @@ truncating `FPS * seconds`. Preview and export include the two pauses.
 {
   "frame_crosshair": true,
   "marker_thickness": 2,
+  "auto_alpha_range": true,
+  "correlation_threshold": 0.2,
   "auto_open_last_project": false,
   "last_project": ""
 }
@@ -68,6 +71,8 @@ truncating `FPS * seconds`. Preview and export include the two pauses.
 | --- | --- | --- |
 | `frame_crosshair` | `true` | Draw the frame centre crosshair in the editors |
 | `marker_thickness` | `2` | Colored alignment-cross stroke and each outline edge, in pixels (clamped to `1..10`) |
+| `auto_alpha_range` | `true` | Automatically set the alpha range to the largest recommended (green) range |
+| `correlation_threshold` | `0.2` | Minimum image correlation (`0.0..1.0`) for accepting auto-alignment results |
 | `auto_open_last_project` | `false` | Reopen `last_project` on start |
 | `last_project` | `""` | Absolute path of the most recently opened or saved project |
 

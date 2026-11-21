@@ -23,10 +23,12 @@ The window title shows the current project name.
 | File | Save project as | Save under a new name (`.zmr` is enforced) |
 | File | New project | Ask for a name and the video settings, then a file |
 | Edit | Undo / Redo (`Ctrl+Z` / `Ctrl+Y`) | Last 10 project edits |
-| Video | | Output format, video size, frame rate, pauses, zooming duration and interpolation |
+| Video | | Output format, video size, frame rate, pauses and zooming duration (interpolation is currently always logarithmic) |
 | Export | | Choose an output AVI file and render the project |
 | Options | Frame crosshair | Show the frame centre; dragging it moves the frame |
 | Options | Marker thickness | Set colored alignment strokes and each outline edge to 1–10 pixels (default 2) |
+| Options | Correlation threshold | Minimum image correlation (0.0–1.0, default 0.20) for accepting the result of *Find alignment points* |
+| Options | Auto alpha range | Automatically set each pair's alpha range to the largest recommended range (default on) |
 | Options | Auto open last project | Reopen the previous project on start |
 
 ## Workflow
@@ -34,7 +36,8 @@ The window title shows the current project name.
 1. **Add images.** Drop files on the list or use *Add files*. Non-image files
    are refused. Reorder by dragging; select an image and press `Del` to
    remove it. A new image gets the largest centred frame that matches the
-   video aspect ratio and a random starting triangle of markers.
+   video aspect ratio and a starting triangle of markers (apex at the top, base at the bottom)
+   inset from the frame edges by 10% of the frame's smaller side.
 2. **Edit a pair.** The bottom area edits two consecutive images; their
    names are bold in the list. Use *Previous pair* / *Next pair* to move.
    - Drag the numbered markers (1 red, 2 green, 3 blue) onto the same three
@@ -46,14 +49,29 @@ The window title shows the current project name.
      editor fit everything, the markers or the frame.
    - *Find alignment points* proposes markers using SIFT feature matching.
      A banner shows progress and can be interrupted; the project changes only
-     when the search succeeds.
+     when the search succeeds. After the search, the correlation of the two
+     images is measured at the centre of the recommended alpha range (fusion
+     step 0.5 when there is none). If it is below **Options > Correlation
+     threshold**, the new markers are not applied and a warning suggests
+     resizing both frames to a similar area, lowering the threshold, or
+     aligning manually by dragging the markers.
+   - Hover any control for a tooltip describing it.
 3. **Tune the blend.** *Fusion step* previews any point of the transition;
    *Alpha range* sets where in the transition the cross-fade starts and ends
    (before the range only the first image shows, after it only the second).
+   The bar under the alpha range slider shows the **recommended range**:
+   green boxes where both images fill the video frame, gray boxes elsewhere.
+   With **Auto** checked (mirrors **Options > Auto alpha range**) the alpha
+   range is set to the largest contiguous green range, or to the full range
+   when no part is green; it is recalculated when the pair, markers or
+   frames change, so manual changes are overwritten while Auto is on.
+   Editing in the fusion editor keeps the fusion preview's zoom and pan; they
+   reset only when you change pair.
 4. **Check the result.** The preview tabs show the selected image, the fusion
    of the current pair, and the whole **Video preview** with play, pause,
-   start/end and single-frame controls. Playback never exceeds the project
-   frame rate. Using the image list selects **Input image**, while using the
+   start/end and single-frame controls. A label next to the position shows
+   the current zoom relative to the first frame (e.g. `3.28x`). Playback
+   never exceeds the project frame rate. Using the image list selects **Input image**, while using the
    fusion editor selects **Fusion preview**. A calculation problem, such as
    markers that make the zoom change direction between images, is reported
    on the preview canvas.

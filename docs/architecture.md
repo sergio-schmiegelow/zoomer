@@ -19,6 +19,9 @@ objects it is given); `backend` imports neither.
 | `load_project` / `save_project` | Read and write `.zmr` files; `save_project` converts `ImageClass` objects to paths without mutating the input |
 | `create_blended_frame` | Renders the cross-fade of image `index` and `index + 1` for a `size_alpha` and `blend_alpha` |
 | `auto_align_images` | Crops both frames, matches SIFT features and stores the three best matches as the pair's markers |
+| `get_blend_alpha_range` / `get_pair_blend_alpha_range` | Scan `size_alpha` and return a mask of where both images fill the video frame (the recommended alpha range) |
+| `calculate_pair_correlation` | Correlation of the two transformed images at the centre of the valid alpha range (0.5 if none); used to accept or reject auto-alignment |
+| `VideoGenerator.get_zoom_on_position` | Zoom of a frame relative to the first one, interpolated in log space |
 | `get_supported_video_formats` | Probes common container/FourCC candidates by writing a temporary frame, returning only formats supported by the installed OpenCV build |
 | `VideoGenerator` | `perform_video_calculations()` computes the cumulative zoom and per-frame positions; writer methods encode using the selected `video_data.format` |
 
@@ -38,11 +41,12 @@ spaced in `log(zoom)` for either direction.
 | --- | --- |
 | `ImageFilesOrganizer` | Image list with drag and drop, add and delete; emits `image_files_changed` |
 | `PreviewArea` | Tabs: input image, fusion preview, video preview |
-| `VideoPreviewWidget` | Scrubber, transport buttons and playback timer limited to the project FPS |
-| `ImageFusionEditor` | Hosts two `ImageMarkersEditor`s plus the sliders and the alignment banner; emits edit requests |
+| `VideoPreviewWidget` | Scrubber, transport buttons, zoom label and playback timer limited to the project FPS |
+| `ImageFusionEditor` | Hosts two `ImageMarkersEditor`s plus the sliders, the recommended-range bar with its Auto checkbox and the alignment banner; emits edit requests |
+| `RecommendedRangeBar` | Green/gray boxes showing where both images fill the video frame |
 | `ImageMarkersEditor` | Zoomable canvas with the draggable frame and markers; the marker outline pulses once per second |
 | `FusionStepSlider`, `AlphaRangeSlider` | Painted sliders sharing one horizontal grid |
-| `VideoSettingsWidget` | Shared output format, video size, frame rate, duration and interpolation controls |
+| `VideoSettingsWidget` | Shared output format, video size, frame rate, pauses and duration controls |
 | `VideoSettingsDialog` / `NewProjectDialog` | Embed `VideoSettingsWidget` for editing or project creation |
 
 Widgets are decoupled from the data: they emit signals (`image_edited`,
@@ -94,7 +98,17 @@ SIFT matching can take seconds, so `_AlignmentJob` (a `QThread`) works on
 shallow copies of the two entries. The live project changes only if the job
 succeeds, was not interrupted and the entries still exist. Interrupting hides
 the banner; because OpenCV cannot be stopped mid-call, the thread finishes
-quietly and its result is discarded.
+quietly and its result is discarded. The job also computes the pair
+correlation; if it is below `cfg_data["correlation_threshold"]` the result is
+dropped and a warning box is shown.
+
+### Recommended alpha range
+
+`MainApp._update_recommended_alpha_range()` computes the mask for the current
+pair when a pair is shown and after marker or frame edits, and passes it to
+`ImageFusionEditor.set_recommended_alpha_range()`. With Auto enabled (the
+`auto_alpha_range` option, mirrored by the editor checkbox) the editor sets
+the slider to the largest contiguous valid range, or `0..100%`.
 
 ### Video export
 
@@ -115,7 +129,7 @@ video scrubber for manual seeking.
 ## Shared video settings
 
 `VideoSettingsWidget` owns the video-format, size, frame-rate, pauses,
-zooming-duration and interpolation controls. `VideoSettingsDialog` embeds it
+and zooming-duration controls. `VideoSettingsDialog` embeds it
 for edits; `NewProjectDialog` embeds the same widget alongside the project-name
 field.
 The detected output-format list is cached for the process lifetime because
