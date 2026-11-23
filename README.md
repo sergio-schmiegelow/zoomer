@@ -1,4 +1,4 @@
-# Zoomer 0.1
+# Zoomer 0.1.1
 
 ![Zoomer video thumbnail](docs/trunk.webp)
 
