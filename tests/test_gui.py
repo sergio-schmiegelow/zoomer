@@ -155,6 +155,57 @@ def test_fusion_editor_can_shrink_to_enlarge_preview(window):
     assert splitter.sizes()[1] > editor_height
 
 
+def test_window_and_splitter_resize_preserve_image_views(window):
+    window.resize(1200, 900)
+    QTest.qWait(250)
+    area = window.image_files_and_preview_area.preview_area
+    area.tabs.setCurrentWidget(area.fusion_image_label)
+    preview = area.fusion_image_label
+    assert not preview._source_pixmap.isNull()
+    preview._zoom = 1.8
+    preview._pan = QPointF(25, -18)
+    editors = [
+        window.image_fusion_editor.pair_splitter.widget(index).editor
+        for index in range(2)
+    ]
+    for editor in editors:
+        editor.scale *= 1.4
+        editor.pan += QPointF(24, -16)
+
+    def views():
+        bounds = preview.contentsRect()
+        pixmap = preview._source_pixmap
+        fit = min(
+            bounds.width() / pixmap.width(), bounds.height() / pixmap.height()
+        )
+        values = [
+            preview._zoom,
+            preview._pan.x() / fit,
+            preview._pan.y() / fit,
+        ]
+        for editor in editors:
+            fit = min(
+                editor.width() / editor.image.width(),
+                editor.height() / editor.image.height(),
+            )
+            center = editor.widget_to_image(
+                QPointF(editor.width() / 2, editor.height() / 2)
+            )
+            values.extend((editor.scale / fit, center.x(), center.y()))
+        return values
+
+    original = views()
+    window.workspace_splitter.moveSplitter(450, 1)
+    QTest.qWait(20)
+    assert views() == pytest.approx(original)
+    window.resize(1400, 1000)
+    QTest.qWait(20)
+    assert views() == pytest.approx(original)
+    window.image_files_and_preview_area.moveSplitter(500, 1)
+    QTest.qWait(20)
+    assert views() == pytest.approx(original)
+
+
 class TestProjects:
     def test_project_is_clean_until_edited_then_title_marks_dirty(
         self, window

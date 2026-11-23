@@ -6,6 +6,7 @@ from PyQt6.QtGui import (
     QKeyEvent,
     QMouseEvent,
     QPainterPath,
+    QPixmap,
     QWheelEvent,
 )
 from PyQt6.QtTest import QTest
@@ -185,6 +186,33 @@ class TestImageMarkersEditor:
         assert (after.x(), after.y()) == pytest.approx(
             (before.x(), before.y())
         )
+
+    def test_resize_preserves_relative_zoom_and_center(self, editor, qapp):
+        editor.resize(800, 300)
+        qapp.processEvents()
+        editor.scale *= 1.7
+        editor.pan += QPointF(31, -22)
+
+        def view():
+            fit = min(
+                editor.width() / editor.image.width(),
+                editor.height() / editor.image.height(),
+            )
+            center = editor.widget_to_image(
+                QPointF(editor.width() / 2, editor.height() / 2)
+            )
+            return editor.scale / fit, center.x(), center.y()
+
+        original = view()
+        for size in ((500, 700), (1000, 240), (800, 300)):
+            editor.resize(*size)
+            qapp.processEvents()
+            assert view() == pytest.approx(original)
+        editor.hide()
+        editor.resize(500, 700)
+        editor.show()
+        qapp.processEvents()
+        assert view() == pytest.approx(original)
 
     def test_crosshair_flag_is_stored(self, editor):
         editor.cfg_frame_crosshair_enabled = False
@@ -400,6 +428,47 @@ def test_preview_area_object_names_identify_distinct_widgets(qapp):
     assert area.findChild(widgets.PreviewArea, "previewTabsArea") is (
         area.preview_area
     )
+
+
+@pytest.mark.parametrize("tab_index", [0, 1, 2])
+@pytest.mark.parametrize("hidden_during_resize", [False, True])
+def test_preview_resize_preserves_relative_zoom_and_pan(
+    qapp, tab_index, hidden_during_resize
+):
+    area = widgets.PreviewArea()
+    area.resize(800, 500)
+    area.show()
+    area.tabs.setCurrentIndex(tab_index)
+    qapp.processEvents()
+    QTest.qWait(20)
+    page = area.tabs.currentWidget()
+    canvas = getattr(page, "canvas", page)
+    pixmap = QPixmap(200, 150)
+    pixmap.fill(QColor("blue"))
+    canvas.set_source_pixmap(pixmap)
+    canvas._zoom = 2.2
+    canvas._pan = QPointF(40, -35)
+
+    def view():
+        bounds = canvas.contentsRect()
+        fit = min(bounds.width() / 200, bounds.height() / 150)
+        return canvas._zoom, canvas._pan.x() / fit, canvas._pan.y() / fit
+
+    original = view()
+    if hidden_during_resize:
+        area.tabs.setCurrentIndex((tab_index + 1) % 3)
+        qapp.processEvents()
+    for size in ((1100, 400), (600, 800), (800, 500)):
+        area.resize(*size)
+        QTest.qWait(20)
+        if hidden_during_resize:
+            area.tabs.setCurrentIndex(tab_index)
+            qapp.processEvents()
+        assert view() == pytest.approx(original)
+        if hidden_during_resize:
+            area.tabs.setCurrentIndex((tab_index + 1) % 3)
+            qapp.processEvents()
+    area.close()
 
 
 class TestVideoPreviewWidget:

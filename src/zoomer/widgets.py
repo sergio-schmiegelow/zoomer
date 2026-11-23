@@ -53,6 +53,13 @@ from .backend import get_supported_video_formats
 CROSS_SIZE = 20
 
 
+def _fit_image_scale(view_size, image_size):
+    return min(
+        view_size.width() / image_size.width(),
+        view_size.height() / image_size.height(),
+    )
+
+
 def _zoom_all_icon():
     icon_image = QPixmap(24, 24)
     icon_image.fill(Qt.GlobalColor.transparent)
@@ -400,6 +407,7 @@ class _FitImageLabel(QLabel):
         self._zoom = 1.0
         self._pan = QPointF()
         self._drag_position = None
+        self._last_contents_size = self.contentsRect().size()
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setMinimumSize(160, 120)
         self.setStyleSheet("background-color: #202020; color: white;")
@@ -417,7 +425,22 @@ class _FitImageLabel(QLabel):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self.zoom_all()
+        bounds = self.contentsRect()
+        old_size = self._last_contents_size
+        if (
+            not self._source_pixmap.isNull()
+            and old_size.width() > 0
+            and old_size.height() > 0
+            and bounds.width() > 0
+            and bounds.height() > 0
+        ):
+            image_size = self._source_pixmap.size()
+            ratio = _fit_image_scale(
+                bounds.size(), image_size
+            ) / _fit_image_scale(old_size, image_size)
+            self._pan *= ratio
+        if bounds.width() > 0 and bounds.height() > 0:
+            self._last_contents_size = bounds.size()
 
     def zoom_all(self):
         self._zoom = 1.0
@@ -430,9 +453,8 @@ class _FitImageLabel(QLabel):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         bounds = self.contentsRect()
-        base_scale = min(
-            bounds.width() / self._source_pixmap.width(),
-            bounds.height() / self._source_pixmap.height(),
+        base_scale = _fit_image_scale(
+            bounds.size(), self._source_pixmap.size()
         )
         scale = base_scale * self._zoom
         width = self._source_pixmap.width() * scale
@@ -484,9 +506,8 @@ class _FitImageLabel(QLabel):
         if self._source_pixmap.isNull():
             return super().wheelEvent(event)
         bounds = self.contentsRect()
-        base_scale = min(
-            bounds.width() / self._source_pixmap.width(),
-            bounds.height() / self._source_pixmap.height(),
+        base_scale = _fit_image_scale(
+            bounds.size(), self._source_pixmap.size()
         )
         old_scale = base_scale * self._zoom
         center = QPointF(bounds.center())
@@ -875,16 +896,6 @@ class PreviewArea(QWidget):
 
     def set_video_error(self, message):
         self.video_preview.set_error(message)
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        QTimer.singleShot(0, self._fit_previews)
-
-    def _fit_previews(self):
-        self.input_image_label.zoom_all()
-        self.fusion_image_label.zoom_all()
-        self.video_preview.canvas.zoom_all()
-        self._update_previews()
 
     def zoom_all(self):
         current_label = self.tabs.currentWidget()
@@ -1835,6 +1846,7 @@ class ImageMarkersEditor(QWidget):
         self.scale = 1.0
         self.pan = QPointF(0, 0)
         self._fitted = False
+        self._last_view_size = None
         self._drag_mode = None
         self._drag_point = None
         self._last_mouse_position = QPointF()
@@ -1878,10 +1890,29 @@ class ImageMarkersEditor(QWidget):
             (point.y() - self.pan.y()) / self.scale,
         )
 
-    def resizeEvent(self, _event):
-        super().resizeEvent(_event)
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        old_size = self._last_view_size
         if not self._fitted:
             self.zoom_all()
+        elif (
+            old_size is not None
+            and old_size.width() > 0
+            and old_size.height() > 0
+            and event.size().width() > 0
+            and event.size().height() > 0
+        ):
+            ratio = _fit_image_scale(
+                event.size(), self.image.size()
+            ) / _fit_image_scale(old_size, self.image.size())
+            old_center = QPointF(old_size.width() / 2, old_size.height() / 2)
+            new_center = QPointF(
+                event.size().width() / 2, event.size().height() / 2
+            )
+            self.pan = new_center + (self.pan - old_center) * ratio
+            self.scale *= ratio
+        if event.size().width() > 0 and event.size().height() > 0:
+            self._last_view_size = event.size()
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -1982,6 +2013,7 @@ class ImageMarkersEditor(QWidget):
             view.center().y() - bounds.center().y() * self.scale,
         )
         self._fitted = True
+        self._last_view_size = self.size()
         self.update()
 
     def paintEvent(self, _event):

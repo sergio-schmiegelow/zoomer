@@ -78,7 +78,8 @@ The window title shows the current project name.
    on the preview canvas.
    The initial divider position balances the displayed preview and editor
    image heights as closely as the layout permits. Drag the divider to give
-   either area more space.
+   either area more space. Resizing the window or moving a divider preserves
+   each image's relative zoom and centered position.
    Removing images updates the previews; fusion and video are unavailable
    when fewer than two images remain.
 
